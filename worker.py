@@ -194,9 +194,15 @@ class Worker:
                 else:
                     self.leaderNode = Config.get_node_from_unique_name(introducer)
                     logging.info(f"MY NEW LEADER IS {self.leaderNode.unique_name}")
+                    response = {'all_files': self.file_service.current_files}
+                    await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES, response).pack())
 
                 self.fetchingIntroducerFlag = False
                 self._notify_waiting(self.config.introducerDNSNode)
+            
+            elif packet.type == PacketType.ALL_LOCAL_FILES:
+                files_in_node = packet.data['all_files']
+                self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
 
             elif packet.type == PacketType.PING or packet.type == PacketType.INTRODUCE:
                 # print(f'{datetime.now()}: received ping from {host}:{port}')
