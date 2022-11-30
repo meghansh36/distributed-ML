@@ -6,7 +6,7 @@ from asyncio import Event, exceptions
 from time import time
 from weakref import WeakSet, WeakKeyDictionary
 from typing import final, Final, NoReturn, Optional
-from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD
+from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH
 from nodes import Node
 from packets import Packet, PacketType
 from protocol import AwesomeProtocol
@@ -19,6 +19,7 @@ from os import path
 import copy
 from typing import List
 import random
+import os
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -700,9 +701,10 @@ class Worker:
             print(' 2. list self id.')
             print(' 3. join the group.')
             print(' 4. leave the group.')
+            print(' 5. load testfiles into sdfs.')
             if self.config.testing:
-                print('5. print current bps.')
-                print('6. current false positive rate.')
+                print('6. print current bps.')
+                print('7. current false positive rate.')
             print('commands:')
             print(' * put <localfilename> <sdfsfilename>')
             print(' * get <sdfsfilename> <localfilename>')
@@ -711,6 +713,8 @@ class Worker:
             print(' * store')
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
             print('')
+            print('special commands:')
+
 
             option: Optional[str] = None
             while True:
@@ -736,13 +740,26 @@ class Worker:
                 self.io.number_of_bytes_sent = 0
                 # self.initialize(self.config)
                 logging.info('stopped sending ACKs and PINGs')
-            elif self.config.testing and option.strip() == '5':
+            elif option.strip() == '5':
+                logging.info('loading testfiles into sdfs ...')
+                dir_list = os.listdir(TEST_FILES_PATH)
+                start_time = time()
+                for file in dir_list:
+                    await self.send_put_request_to_leader(TEST_FILES_PATH + file, file)
+
+                    event = Event()
+                    self._waiting_for_second_leader_event = event
+                    await asyncio.wait([self._waiting_for_second_leader_event.wait()])
+                    del self._waiting_for_second_leader_event
+                    self._waiting_for_second_leader_event = None
+                print(f"PUT all testfiles runtime: {time() - start_time} seconds")
+            elif self.config.testing and option.strip() == '6':
                 if self.io.time_of_first_byte != 0:
                     logging.info(
                         f'BPS: {(self.io.number_of_bytes_sent)/(time() - self.io.time_of_first_byte)}')
                 else:
                     logging.info(f'BPS: 0')
-            elif self.config.testing and option.strip() == '6':
+            elif self.config.testing and option.strip() == '7':
                 if self.membership_list.false_positives > self.membership_list.indirect_failures:
                     logging.info(
                         f'False positive rate: {(self.membership_list.false_positives - self.membership_list.indirect_failures)/self.total_pings_send}, pings sent: {self.total_pings_send}, indirect failures: {self.membership_list.indirect_failures}, false positives: {self.membership_list.false_positives}')

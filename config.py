@@ -9,6 +9,8 @@ PING_DURATION: final = 5
 
 CLEANUP_TIME: final = 20
 
+TEST_FILES_PATH = "./testfiles/"
+
 # INTRODUCER_DNS_HOST = '127.0.0.1'
 INTRODUCER_DNS_HOST = "fa22-cs425-6901.cs.illinois.edu"
 INTRODUCER_DNS_PORT = 8888
