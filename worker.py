@@ -708,9 +708,12 @@ class Worker:
             print(' 3. join the group.')
             print(' 4. leave the group.')
             print(' 5. load testfiles into sdfs.')
+            print(' 6. print files stored per node.')
+            print(' 7. print all files in the SDFS.')
+            print(' 8. print number of files in the SDFS.')
             if self.config.testing:
-                print('6. print current bps.')
-                print('7. current false positive rate.')
+                print('9. print current bps.')
+                print('10. current false positive rate.')
             print('commands:')
             print(' * put <localfilename> <sdfsfilename>')
             print(' * get <sdfsfilename> <localfilename>')
@@ -719,7 +722,6 @@ class Worker:
             print(' * store')
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
             print('')
-            print('special commands:')
 
 
             option: Optional[str] = None
@@ -730,8 +732,6 @@ class Worker:
             
             if option.strip() == '1':
                 self.membership_list.print()
-                if self.leaderFlag:
-                    print(self.leaderObj.global_file_dict)
             elif option.strip() == '2':
                 print(self.config.node.unique_name)
             elif option.strip() == '3':
@@ -759,13 +759,28 @@ class Worker:
                     del self._waiting_for_second_leader_event
                     self._waiting_for_second_leader_event = None
                 print(f"PUT all testfiles runtime: {time() - start_time} seconds")
-            elif self.config.testing and option.strip() == '6':
+            elif option.strip() == '6':
+                if self.leaderFlag:
+                    print(self.leaderObj.global_file_dict)
+            elif option.strip() == '7':
+                sdfs_files = set()
+                for k, v in self.leaderObj.global_file_dict.items():
+                    for k1, v1 in v.items():
+                        sdfs_files.add(k1)
+                print(f"SDFS files: {list(sdfs_files)}")
+            elif option.strip() == '8':
+                sdfs_files = set()
+                for k, v in self.leaderObj.global_file_dict.items():
+                    for k1, v1 in v.items():
+                        sdfs_files.add(k1)
+                print(f"SDFS file count: {len(sdfs_files)}")
+            elif self.config.testing and option.strip() == '9':
                 if self.io.time_of_first_byte != 0:
                     logging.info(
                         f'BPS: {(self.io.number_of_bytes_sent)/(time() - self.io.time_of_first_byte)}')
                 else:
                     logging.info(f'BPS: 0')
-            elif self.config.testing and option.strip() == '7':
+            elif self.config.testing and option.strip() == '10':
                 if self.membership_list.false_positives > self.membership_list.indirect_failures:
                     logging.info(
                         f'False positive rate: {(self.membership_list.false_positives - self.membership_list.indirect_failures)/self.total_pings_send}, pings sent: {self.total_pings_send}, indirect failures: {self.membership_list.indirect_failures}, false positives: {self.membership_list.false_positives}')
