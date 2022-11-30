@@ -7,7 +7,7 @@ from typing import List
 SDFS_LOCATION = '/home/bachina3/MP3/awesomesdfs/sdfs/'
 MAX_FILE_VERSIONS = 5
 
-CLEANUP_ON_STARTUP = True
+CLEANUP_ON_STARTUP = False
 
 class FileService:
     """Service to handle all file ops and scp commands"""
