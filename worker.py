@@ -694,7 +694,11 @@ class Worker:
                 print(f"GET file {sdfsfilename} failed")
     
     async def run_inference(self, model, images):
-        pass
+        
+        if model == "inceptionV3":
+            pass
+        elif model == "resNet50":
+            pass
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
@@ -938,9 +942,8 @@ class Worker:
                     except:
                         images.append(images_option)
                     
-                    print(f"running perdiction on images: {images}")
                     # perform prediction on all the images
-                    # await self.run_inference(model, images)
+                    await self.run_inference(model, images)
                 
                 else:
                     print('invalid option.')

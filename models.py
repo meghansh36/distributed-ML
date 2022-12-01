@@ -56,12 +56,37 @@ class ModelResNet50:
         top_five_predict = resnet50.decode_predictions(predict_img, top=5)
 
         return top_five_predict
+    
+    def multi_predict(self, images):
+
+        results = []
+
+        for image in images:
+            results.append(self.predict(image))
+        
+        return results
 
 
 async def perform_inference(model, files):
     with ProcessPoolExecutor() as process_pool:
+
+        batch_files = []
+
+        single_batch = []
+        for file in files:
+            if len(single_batch) <= 10:
+                single_batch.append(file)
+            else:
+                batch_files.append(single_batch)
+                single_batch = []
+                single_batch.append(file)
+        
+        if len(single_batch) != 0:
+            batch_files.append(single_batch)
+            single_batch = []
+
         loop: AbstractEventLoop = asyncio.get_running_loop()
-        calls: List[partial[int]] = [partial(model.predict, file) for file in files]
+        calls: List[partial[int]] = [partial(model.multi_predict, batch) for batch in batch_files]
         call_coros = []
 
         for call in calls:
