@@ -945,7 +945,14 @@ class Worker:
                     try:
                         images_option = literal_eval(options[2])
                         if isinstance(images_option, int):
-                            dir_list = os.listdir(TEST_FILES_PATH)
+                            
+                            sdfs_files = set()
+                            for k, v in self.leaderObj.global_file_dict.items():
+                                for k1, v1 in v.items():
+                                    sdfs_files.add(k1)
+
+                            dir_list = list(sdfs_files)
+
                             if images_option > len(dir_list) or images_option <= 0:
                                 images = dir_list
                             else:
