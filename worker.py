@@ -20,6 +20,8 @@ import copy
 from typing import List
 import random
 import os
+from ast import literal_eval
+from models import ModelInceptionV3, ModelResNet50, perform_inference
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -39,6 +41,8 @@ class Worker:
         self._waiting_for_second_leader_event: Optional[Event] = None
         self.get_file_sdfsfilename = None
         self.get_file_machineids_with_file_versions = None
+        self.model1 = ModelInceptionV3()
+        self.model2 = ModelResNet50()
 
     def initialize(self, config: Config, globalObj: Global) -> None:
         """Function to initialize all the required class for Worker"""
@@ -689,6 +693,9 @@ class Worker:
             if not downloaded:
                 print(f"GET file {sdfsfilename} failed")
     
+    async def run_inference(self, model, images):
+        pass
+
     async def check_user_input(self):
         """Function to ask for user input and handles"""
         loop = asyncio.get_event_loop()
@@ -722,7 +729,9 @@ class Worker:
             print(' * store')
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
             print('')
-
+            print('machine learning commands:')
+            print(' * predict-locally <model> <single image or list of images> ')
+            print('')
 
             option: Optional[str] = None
             while True:
@@ -814,7 +823,6 @@ class Worker:
                     self._waiting_for_second_leader_event = None
                     print(f"PUT runtime: {time() - start_time} seconds")
                     
-
                 elif cmd == "get": # GET file
                     if len(options) != 3:
                         print('invalid options for get command.')
@@ -897,6 +905,43 @@ class Worker:
                         self._waiting_for_leader_event = None
                     print(f"GET-VERSIONS runtime: {time() - start_time} seconds")
 
+                elif cmd == "predict-locally": # predict_locally
+                    
+                    if len(options) != 3:
+                        print('invalid options for predict-locally command.')
+                        continue
+                    
+                    start_time = time()
+                    model = options[1]
+                    if model not in ["inceptionV3", "resNet50"]:
+                        print('invalid model expected: inceptionV3 or resNet50.')
+                        continue
+ 
+                    images = []
+                    try:
+                        images_option = literal_eval(options[2])
+                        if isinstance(images_option, int):
+                            dir_list = os.listdir(TEST_FILES_PATH)
+                            if images_option > len(dir_list) or images_option <= 0:
+                                images = dir_list
+                            else:
+                                images = random.sample(dir_list, images_option)
+                            
+                            for i in range(len(images)):
+                                images[i] = TEST_FILES_PATH + images[i]
+
+                        elif isinstance(images_option, list):
+                            images = images_option
+                        else:
+                            print('invalid images provided')
+                            continue
+                    except:
+                        images.append(images_option)
+                    
+                    print(f"running perdiction on images: {images}")
+                    # perform prediction on all the images
+                    # await self.run_inference(model, images)
+                
                 else:
                     print('invalid option.')
 
