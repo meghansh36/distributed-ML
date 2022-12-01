@@ -6,7 +6,7 @@ from asyncio import Event, exceptions
 from time import time
 from weakref import WeakSet, WeakKeyDictionary
 from typing import final, Final, NoReturn, Optional
-from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH
+from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH, available_files_in_sdfs
 from nodes import Node
 from packets import Packet, PacketType
 from protocol import AwesomeProtocol
@@ -946,13 +946,7 @@ class Worker:
                         images_option = literal_eval(options[2])
                         if isinstance(images_option, int):
                             
-                            sdfs_files = set()
-                            for k, v in self.leaderObj.global_file_dict.items():
-                                for k1, v1 in v.items():
-                                    sdfs_files.add(k1)
-
-                            dir_list = list(sdfs_files)
-
+                            dir_list = os.listdir(TEST_FILES_PATH)
                             if images_option > len(dir_list) or images_option <= 0:
                                 images = dir_list
                             else:
