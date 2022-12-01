@@ -6,7 +6,7 @@ from asyncio import Event, exceptions
 from time import time
 from weakref import WeakSet, WeakKeyDictionary
 from typing import final, Final, NoReturn, Optional
-from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH
+from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH
 from nodes import Node
 from packets import Packet, PacketType
 from protocol import AwesomeProtocol
@@ -691,10 +691,46 @@ class Worker:
             if not downloaded:
                 print(f"GET file {sdfsfilename} failed")
     
-    async def run_inference(self, model, images):
+    async def run_inference_on_testfiles(self, model, images):
         start_time = time()
         await perform_inference(model, images)
         print(f"{model} Inference on {len(images)} images took {time() - start_time}")
+    
+    async def run_inference(self, model, images):
+        start_time = time()
+
+        # download all the images locally
+        images_full_path = []
+        for image in images:
+            
+            if os.path.exists(image):
+                images_full_path.append(image)
+            elif os.path.exists(DOWNLOAD_PATH + image):
+                images_full_path.append(DOWNLOAD_PATH + image)
+            else:
+                await self.get_cli(image, DOWNLOAD_PATH + image)
+                if os.path.exists(DOWNLOAD_PATH + image):
+                    images_full_path.append(DOWNLOAD_PATH + image)
+        
+        print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
+        await perform_inference(model, images_full_path)
+        print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
+    
+    async def get_cli(self, sdfsfilename, localfilename):
+        if self.isCurrentNodeLeader():
+            logging.info(f"fetching machine details locally about {sdfsfilename}.")
+            machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(sdfsfilename)
+            await self.get_file_locally(machineids_with_filenames=machineids_with_filenames, sdfsfilename=sdfsfilename, localfilename=localfilename)
+        else:
+            logging.info(f"fetching machine details where the {sdfsfilename} is stored from Leader.")
+            await self.send_get_file_request_to_leader(sdfsfilename)
+            if self.get_file_machineids_with_file_versions is not None and self.get_file_sdfsfilename is not None:
+                await self.get_file_locally(machineids_with_filenames=self.get_file_machineids_with_file_versions, sdfsfilename=self.get_file_sdfsfilename, localfilename=localfilename)
+                self.get_file_machineids_with_file_versions = None
+                self.get_file_sdfsfilename = None
+
+            del self._waiting_for_leader_event
+            self._waiting_for_leader_event = None
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
@@ -827,24 +863,13 @@ class Worker:
                     if len(options) != 3:
                         print('invalid options for get command.')
                         continue
+                    
                     start_time = time()
                     sdfsfilename = options[1]
                     localfilename = options[2]
-                    if self.isCurrentNodeLeader():
-                        logging.info(f"fetching machine details locally about {sdfsfilename}.")
-                        machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(sdfsfilename)
-                        await self.get_file_locally(machineids_with_filenames=machineids_with_filenames, sdfsfilename=sdfsfilename, localfilename=localfilename)
-                    else:
-                        logging.info(f"fetching machine details where the {sdfsfilename} is stored from Leader.")
-                        await self.send_get_file_request_to_leader(sdfsfilename)
-                        if self.get_file_machineids_with_file_versions is not None and self.get_file_sdfsfilename is not None:
-                            await self.get_file_locally(machineids_with_filenames=self.get_file_machineids_with_file_versions, sdfsfilename=self.get_file_sdfsfilename, localfilename=localfilename)
-                            self.get_file_machineids_with_file_versions = None
-                            self.get_file_sdfsfilename = None
 
-                        del self._waiting_for_leader_event
-                        self._waiting_for_leader_event = None
-
+                    await self.get_cli(sdfsfilename, localfilename)
+                    
                     print(f"GET runtime: {time() - start_time} seconds")
 
                 elif cmd == "delete": # DEL file
@@ -911,7 +936,6 @@ class Worker:
                         print('invalid options for predict-locally command.')
                         continue
                     
-                    start_time = time()
                     model = options[1]
                     if model not in ["InceptionV3", "ResNet50"]:
                         print('invalid model expected: InceptionV3 or ResNet50.')
@@ -939,6 +963,7 @@ class Worker:
                         images.append(images_option)
                     
                     # perform prediction on all the images
+                    # await self.run_inference_on_testfiles(model, images)
                     await self.run_inference(model, images)
                 
                 else:
