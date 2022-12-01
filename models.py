@@ -80,8 +80,4 @@ async def perform_inference(model_name, files):
         call_coros.append(loop.run_in_executor(process_pool, call))
 
         results = await asyncio.gather(*call_coros)
-
-        for result in results:
-            print(result)
-        
         return results

@@ -692,7 +692,9 @@ class Worker:
                 print(f"GET file {sdfsfilename} failed")
     
     async def run_inference(self, model, images):
+        start_time = time()
         await perform_inference(model, images)
+        print(f"{model} Inference on {len(images)} images took {time() - start_time}")
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
