@@ -1,4 +1,3 @@
-import pprint
 import numpy as np
 from keras.preprocessing import image
 import tensorflow.compat.v1 as tf
@@ -83,4 +82,6 @@ async def perform_inference(model_name, files):
         results = await asyncio.gather(*call_coros)
 
         for result in results:
-            pprint(result)
+            print(result)
+        
+        return results
