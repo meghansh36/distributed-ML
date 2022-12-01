@@ -24,6 +24,8 @@ class ModelInceptionV3:
     
     def predict(self, image_path):
 
+        print(f"ModelInceptionV3: performing prediction on {image_path}")
+
         img = tf.keras.utils.load_img(image_path, target_size=(299,299))
 
         input_img = tf.keras.utils.img_to_array(img)
@@ -53,6 +55,8 @@ class ModelResNet50:
         self.model = ResNet50(weights='imagenet')
     
     def predict(self, image_path):
+
+        print(f"ModelResNet50: performing prediction on {image_path}")
 
         img = tf.keras.utils.load_img(image_path, target_size=(224, 224))
 
