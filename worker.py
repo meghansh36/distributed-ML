@@ -698,7 +698,7 @@ class Worker:
         if model == "inceptionV3":
             await perform_inference(self.model1, images)
         elif model == "resNet50":
-            await perform_inference(self.model1, images)
+            await perform_inference(self.model2, images)
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""

@@ -35,6 +35,15 @@ class ModelInceptionV3:
         top_five_predict = inception_v3.decode_predictions(predict_img, top=5)
 
         return top_five_predict
+    
+    def multi_predict(self, images):
+
+        results = []
+
+        for image in images:
+            results.append(self.predict(image))
+        
+        return results
 
 
 class ModelResNet50:
