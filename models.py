@@ -15,95 +15,70 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from typing import List
 
+def run_inference_on_InceptionV3(image_files: list):
 
-class ModelInceptionV3:
+    modelObj = InceptionV3(weights='imagenet')
 
-    def __init__(self) -> None:
-        
-        self.model = InceptionV3(weights='imagenet')
+    results = []
     
-    def predict(self, image_path):
+    for image_file in image_files:
 
-        print(f"ModelInceptionV3: performing prediction on {image_path}")
+        # print(f"ModelInceptionV3: performing prediction on {image_file}")
 
-        img = tf.keras.utils.load_img(image_path, target_size=(299,299))
+        img = tf.keras.utils.load_img(image_file, target_size=(299,299))
 
         input_img = tf.keras.utils.img_to_array(img)
         input_img = np.expand_dims(input_img, axis=0)
         input_img = inception_v3.preprocess_input(input_img)
 
-        predict_img = self.model.predict(input_img)
+        predict_img = modelObj.predict(input_img)
 
         top_five_predict = inception_v3.decode_predictions(predict_img, top=5)
 
-        return top_five_predict
+        results.append(top_five_predict)
+
+    return results
+
+def run_inference_on_ResNet50(image_files: list):
+
+    modelObj = ResNet50(weights='imagenet')
+
+    results = []
     
-    def multi_predict(self, images):
+    for image_file in image_files:
 
-        results = []
+        # print(f"ResNet50: performing prediction on {image_file}")
 
-        for image in images:
-            results.append(self.predict(image))
-        
-        return results
-
-
-class ModelResNet50:
-
-    def __init__(self) -> None:
-        
-        self.model = ResNet50(weights='imagenet')
-    
-    def predict(self, image_path):
-
-        print(f"ModelResNet50: performing prediction on {image_path}")
-
-        img = tf.keras.utils.load_img(image_path, target_size=(224, 224))
+        img = tf.keras.utils.load_img(image_file, target_size=(224, 224))
 
         input_img = tf.keras.utils.img_to_array(img)
         input_img = np.expand_dims(input_img, axis=0)
         input_img = resnet50.preprocess_input(input_img)
 
-        predict_img = self.model.predict(input_img)
+        predict_img = modelObj.predict(input_img)
 
         top_five_predict = resnet50.decode_predictions(predict_img, top=5)
 
-        return top_five_predict
+        results.append(top_five_predict)
+
+    return results
+
+
+async def perform_inference(model_name, files):
     
-    def multi_predict(self, images):
-
-        results = []
-
-        for image in images:
-            results.append(self.predict(image))
-        
-        return results
-
-
-async def perform_inference(model, files):
+    function = None
+    if model_name == "InceptionV3":
+        function = run_inference_on_InceptionV3
+    elif model_name == "ResNet50":
+        function = run_inference_on_ResNet50
+    else:
+        return "Invalid model"
+    
     with ProcessPoolExecutor() as process_pool:
-
-        batch_files = []
-
-        single_batch = []
-        for file in files:
-            if len(single_batch) <= 10:
-                single_batch.append(file)
-            else:
-                batch_files.append(single_batch)
-                single_batch = []
-                single_batch.append(file)
-        
-        if len(single_batch) != 0:
-            batch_files.append(single_batch)
-            single_batch = []
-
         loop: AbstractEventLoop = asyncio.get_running_loop()
-        calls: List[partial[int]] = [partial(model.multi_predict, batch) for batch in batch_files]
+        call: partial[List[str]] = partial(function, files)
         call_coros = []
-
-        for call in calls:
-            call_coros.append(loop.run_in_executor(process_pool, call))
+        call_coros.append(loop.run_in_executor(process_pool, call))
 
         results = await asyncio.gather(*call_coros)
 

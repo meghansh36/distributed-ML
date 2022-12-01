@@ -21,7 +21,7 @@ from typing import List
 import random
 import os
 from ast import literal_eval
-from models import ModelInceptionV3, ModelResNet50, perform_inference
+from models import perform_inference
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -41,8 +41,6 @@ class Worker:
         self._waiting_for_second_leader_event: Optional[Event] = None
         self.get_file_sdfsfilename = None
         self.get_file_machineids_with_file_versions = None
-        self.model1 = ModelInceptionV3()
-        self.model2 = ModelResNet50()
 
     def initialize(self, config: Config, globalObj: Global) -> None:
         """Function to initialize all the required class for Worker"""
@@ -694,11 +692,7 @@ class Worker:
                 print(f"GET file {sdfsfilename} failed")
     
     async def run_inference(self, model, images):
-        
-        if model == "inceptionV3":
-            await perform_inference(self.model1, images)
-        elif model == "resNet50":
-            await perform_inference(self.model2, images)
+        await perform_inference(model, images)
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
@@ -917,8 +911,8 @@ class Worker:
                     
                     start_time = time()
                     model = options[1]
-                    if model not in ["inceptionV3", "resNet50"]:
-                        print('invalid model expected: inceptionV3 or resNet50.')
+                    if model not in ["InceptionV3", "ResNet50"]:
+                        print('invalid model expected: InceptionV3 or ResNet50.')
                         continue
  
                     images = []
