@@ -951,8 +951,8 @@ class Worker:
                             else:
                                 images = random.sample(dir_list, images_option)
                             
-                            for i in range(len(images)):
-                                images[i] = TEST_FILES_PATH + images[i]
+                            # for i in range(len(images)):
+                            #     images[i] = TEST_FILES_PATH + images[i]
 
                         elif isinstance(images_option, list):
                             images = images_option
