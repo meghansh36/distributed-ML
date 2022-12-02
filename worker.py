@@ -22,6 +22,7 @@ import random
 import os
 from ast import literal_eval
 from models import perform_inference
+import json
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -700,9 +701,9 @@ class Worker:
         start_time = time()
 
         # download all the images locally
+        failed_images = []
         images_full_path = []
         for image in images:
-            
             if os.path.exists(image):
                 images_full_path.append(image)
             elif os.path.exists(DOWNLOAD_PATH + image):
@@ -711,10 +712,18 @@ class Worker:
                 await self.get_cli(image, DOWNLOAD_PATH + image)
                 if os.path.exists(DOWNLOAD_PATH + image):
                     images_full_path.append(DOWNLOAD_PATH + image)
+                else:
+                    failed_images.append(image)
         
         print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
-        await perform_inference(model, images_full_path)
+        results = await perform_inference(model, images_full_path)
+
+        for failed_image in failed_images:
+            results[failed_image] = "Failed to download file from SDFS"
+
         print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
+
+        return results
     
     async def get_cli(self, sdfsfilename, localfilename):
         if self.isCurrentNodeLeader():
@@ -858,7 +867,7 @@ class Worker:
                     del self._waiting_for_second_leader_event
                     self._waiting_for_second_leader_event = None
                     print(f"PUT runtime: {time() - start_time} seconds")
-                    
+
                 elif cmd == "get": # GET file
                     if len(options) != 3:
                         print('invalid options for get command.')
@@ -932,7 +941,7 @@ class Worker:
 
                 elif cmd == "predict-locally": # predict_locally
                     
-                    if len(options) != 3:
+                    if len(options) != 4:
                         print('invalid options for predict-locally command.')
                         continue
                     
@@ -940,21 +949,22 @@ class Worker:
                     if model not in ["InceptionV3", "ResNet50"]:
                         print('invalid model expected: InceptionV3 or ResNet50.')
                         continue
+
+                    job_id = random.randrange(1, 100000)
+                    try:
+                        job_id = int(option[2])
+                    except:
+                        pass
  
                     images = []
                     try:
-                        images_option = literal_eval(options[2])
+                        images_option = literal_eval(options[3])
                         if isinstance(images_option, int):
-                            
                             dir_list = os.listdir(TEST_FILES_PATH)
                             if images_option > len(dir_list) or images_option <= 0:
                                 images = dir_list
                             else:
                                 images = random.sample(dir_list, images_option)
-                            
-                            # for i in range(len(images)):
-                            #     images[i] = TEST_FILES_PATH + images[i]
-
                         elif isinstance(images_option, list):
                             images = images_option
                         else:
@@ -965,7 +975,19 @@ class Worker:
                     
                     # perform prediction on all the images
                     # await self.run_inference_on_testfiles(model, images)
-                    await self.run_inference(model, images)
+                    results = await self.run_inference(model, images)
+
+                    # create new file with the result
+                    filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}"
+                    with open(DOWNLOAD_PATH + filename, 'w') as fout:
+                        json_dumps_str = json.dumps(results, indent=4)
+                        print(json_dumps_str, file=fout)
+                    
+                    print(f"written output to file {filename}")
+                    
+                    # upload it to SDFS
+                    
+
                 
                 else:
                     print('invalid option.')

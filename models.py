@@ -18,7 +18,7 @@ def run_inference_on_InceptionV3(image_files: list):
 
     modelObj = InceptionV3(weights='imagenet')
 
-    results = []
+    results = {}
     
     for image_file in image_files:
 
@@ -34,7 +34,7 @@ def run_inference_on_InceptionV3(image_files: list):
 
         top_five_predict = inception_v3.decode_predictions(predict_img, top=5)
 
-        results.append(top_five_predict)
+        results[image_file.split("/")[-1]] = top_five_predict
 
     return results
 
@@ -42,7 +42,7 @@ def run_inference_on_ResNet50(image_files: list):
 
     modelObj = ResNet50(weights='imagenet')
 
-    results = []
+    results = {}
     
     for image_file in image_files:
 
@@ -58,7 +58,7 @@ def run_inference_on_ResNet50(image_files: list):
 
         top_five_predict = resnet50.decode_predictions(predict_img, top=5)
 
-        results.append(top_five_predict)
+        results[image_file.split("/")[-1]] = top_five_predict
 
     return results
 
