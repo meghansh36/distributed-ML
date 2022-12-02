@@ -466,9 +466,9 @@ class Worker:
                 if curr_node:
                     file_pattern = packet.data['filepattern']
                     all_filenames = self.leaderObj.get_all_matching_files(file_pattern)
-                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_REQUEST_ACK, {'filepattern': file_pattern, 'files': all_filenames}).pack())
+                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_NAMES_REQUEST_ACK, {'filepattern': file_pattern, 'files': all_filenames}).pack())
 
-            elif packet.type == PacketType.GET_FILE_REQUEST_ACK:
+            elif packet.type == PacketType.GET_FILE_NAMES_REQUEST_ACK:
                 self.get_file_sdfsfilename = packet.data['filepattern']
                 self.get_file_machineids_with_file_versions = packet.data["files"]
                 if self._waiting_for_leader_event is not None:
