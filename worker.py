@@ -810,7 +810,7 @@ class Worker:
                 final_output.update(new_dict)
         
         # create new file with the result               
-        dump_to_file(final_output, output_file)
+        dump_to_file(final_output, local_dir + output_file)
 
         print(f"written final data into {local_dir + output_file}")
 
