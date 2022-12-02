@@ -740,6 +740,20 @@ class Worker:
 
             del self._waiting_for_leader_event
             self._waiting_for_leader_event = None
+    
+    async def put_cli(self, localfilename, sdfsfilename):
+        
+        if not path.exists(localfilename):
+            print('invalid localfilename for put command.')
+            return
+
+        await self.send_put_request_to_leader(localfilename, sdfsfilename)
+
+        event = Event()
+        self._waiting_for_second_leader_event = event
+        await asyncio.wait([self._waiting_for_second_leader_event.wait()])
+        del self._waiting_for_second_leader_event
+        self._waiting_for_second_leader_event = None
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
@@ -854,18 +868,8 @@ class Worker:
                         continue
                     start_time = time()
                     localfilename = options[1]
-                    if not path.exists(localfilename):
-                        print('invalid localfilename for put command.')
-                        continue
                     sdfsfilename = options[2]
-
-                    await self.send_put_request_to_leader(localfilename, sdfsfilename)
-
-                    event = Event()
-                    self._waiting_for_second_leader_event = event
-                    await asyncio.wait([self._waiting_for_second_leader_event.wait()])
-                    del self._waiting_for_second_leader_event
-                    self._waiting_for_second_leader_event = None
+                    await self.put_cli(localfilename, sdfsfilename)
                     print(f"PUT runtime: {time() - start_time} seconds")
 
                 elif cmd == "get": # GET file
@@ -978,7 +982,7 @@ class Worker:
                     results = await self.run_inference(model, images)
 
                     # create new file with the result
-                    filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}"
+                    filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"
                     with open(DOWNLOAD_PATH + filename, 'w') as fout:
                         json_dumps_str = json.dumps(results, indent=4, cls=NpEncoder)
                         print(json_dumps_str, file=fout)
@@ -986,8 +990,7 @@ class Worker:
                     print(f"written output to file {filename}")
                     
                     # upload it to SDFS
-
-
+                    await self.put_cli(DOWNLOAD_PATH + filename, filename)
                 
                 else:
                     print('invalid option.')
