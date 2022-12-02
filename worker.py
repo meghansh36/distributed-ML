@@ -42,6 +42,8 @@ class Worker:
         self._waiting_for_second_leader_event: Optional[Event] = None
         self.get_file_sdfsfilename = None
         self.get_file_machineids_with_file_versions = None
+        self.job_count = 0
+        self.current_job_id = 0
 
     def initialize(self, config: Config, globalObj: Global) -> None:
         """Function to initialize all the required class for Worker"""
@@ -473,6 +475,21 @@ class Worker:
                 self.get_file_machineids_with_file_versions = packet.data["files"]
                 if self._waiting_for_leader_event is not None:
                     self._waiting_for_leader_event.set()
+            
+            elif packet.type == PacketType.SUBMIT_JOB_REQUEST:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    model = packet.data['model']
+                    images_count = packet.data['images_count']
+                    # schedule the job on VMs
+                    self.job_count += 1
+                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
+            
+            elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
+                self.current_job_id = packet.data['jobid']
+                if self._waiting_for_leader_event is not None:
+                    self._waiting_for_leader_event.set()
+
 
     async def _wait(self, node: Node, timeout: float) -> bool:
         """Function to wait for ACKs after PINGs"""
@@ -617,6 +634,11 @@ class Worker:
     async def send_get_filenames_request_to_leader(self, file_pattern):
         """function to send the GET_FILENAMES request to the leader from the client"""
         await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_NAMES_REQUEST, {'filepattern': file_pattern}).pack())
+        await self._wait_for_leader(20)
+    
+    async def send_submit_job_request_to_leader(self, model, num_of_images):
+        """function to send the PUT request to the leader from the client"""
+        await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST, {'model': model, 'images_count': num_of_images}).pack())
         await self._wait_for_leader(20)
 
     def isCurrentNodeLeader(self):
@@ -872,7 +894,8 @@ class Worker:
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
             print('')
             print('machine learning commands:')
-            print(' * predict-locally <model> <single image or list of images> ')
+            print(' * predict-locally <model> <single image or list of images>')
+            print(' * get-output <jobid>')
             print('')
 
             option: Optional[str] = None
@@ -982,7 +1005,7 @@ class Worker:
                     del self._waiting_for_second_leader_event
                     self._waiting_for_second_leader_event = None
                     print(f"DELETE runtime: {time() - start_time} seconds")
-                    
+                 
                 elif cmd == "ls": # list all the
                     if len(options) != 2:
                         print('invalid options for ls command.')
@@ -1072,7 +1095,7 @@ class Worker:
                     
                     # upload it to SDFS
                     await self.put_cli(DOWNLOAD_PATH + filename, filename)
-                
+
                 elif cmd == "ls-all":
                     
                     if len(options) != 2:
@@ -1105,7 +1128,7 @@ class Worker:
                     print(f"{len(downloaded_files)} files downloaded!!!\n{downloaded_files}")
                     
                     print(f"GET-ALL runtime: {time() - start_time} seconds")
-                
+
                 elif cmd == "get-output":
 
                     if len(options) != 2:
@@ -1128,6 +1151,35 @@ class Worker:
                     
                     print(f"GET-OUTPUT runtime: {time() - start_time} seconds")
 
+                elif cmd == "submit-job":
+
+                    if len(options) != 3:
+                        print('invalid options for submit-job command.')
+                        continue
+                        
+                    model = options[1]
+                    if model not in ["InceptionV3", "ResNet50"]:
+                        print('invalid model expected: InceptionV3 or ResNet50.')
+                        continue
+                    
+                    images_option = 0
+                    try:
+                        images_option = literal_eval(options[2])
+                        if not isinstance(images_option, int):
+                            print('invalid images count provided')
+                            continue
+                    except:
+                        print('invalid images count provided')
+                        continue
+                    
+                    # send this command to coordinator
+                    await self.send_submit_job_request_to_leader(model, images_option)
+
+                    # event = Event()
+                    # self._waiting_for_second_leader_event = event
+                    # await asyncio.wait([self._waiting_for_second_leader_event.wait()])
+                    # del self._waiting_for_second_leader_event
+                    # self._waiting_for_second_leader_event = None
 
                 else:
                     print('invalid option.')

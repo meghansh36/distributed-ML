@@ -45,6 +45,8 @@ class PacketType(str, Enum):
     ALL_LOCAL_FILES = '100010'
     GET_FILE_NAMES_REQUEST = '100011'
     GET_FILE_NAMES_REQUEST_ACK = '100100'
+    SUBMIT_JOB_REQUEST = '100101'
+    SUBMIT_JOB_REQUEST_ACK = '100110'
 
 class Packet:
     """Custom packet type for failure detector"""
