@@ -103,12 +103,12 @@ class Leader:
     
     def get_all_matching_files(self, pattern):
 
-        matching_files = []
+        matching_files = set()
         for _, machine_file_dict in self.global_file_dict.items():
             for sdfsFileName, _ in machine_file_dict.items():
                 if fnmatch.fnmatch(sdfsFileName, pattern):
-                    matching_files.append(sdfsFileName)
-        return matching_files
+                    matching_files.add(sdfsFileName)
+        return list(matching_files)
 
     def create_new_status_for_file(self, filename: str, filepath:str, requestingNode: Node, request_type: str):
         self.status_dict[filename] = {
