@@ -803,14 +803,11 @@ class Worker:
             print("requested files are not available in provided directory")
             return 
         
-        f1 = open(local_dir + available_files[0], encoding='utf-8')
-        final_output = json.loads(f1.read())
-        f1.close()
-
-        for f in available_files[1:]:
+        final_output:dict = {}
+        for f in available_files:
             with open(local_dir + f, encoding='utf-8') as f1:
                 new_dict = json.loads(f1.read())
-                Merge(new_dict, final_output)
+                final_output.update(new_dict)
         
         # create new file with the result               
         dump_to_file(final_output, output_file)
