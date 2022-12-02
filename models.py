@@ -81,7 +81,7 @@ async def perform_inference(model_name, files):
         call_coros.append(loop.run_in_executor(process_pool, call))
 
         results = await asyncio.gather(*call_coros)
-        return results
+        return results[0]
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
