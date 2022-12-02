@@ -13,6 +13,7 @@ from asyncio.events import AbstractEventLoop
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from typing import List
+import json
 
 def run_inference_on_InceptionV3(image_files: list):
 
@@ -81,3 +82,14 @@ async def perform_inference(model_name, files):
 
         results = await asyncio.gather(*call_coros)
         return results
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            # 👇️ alternatively use str()
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)

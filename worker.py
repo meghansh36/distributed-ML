@@ -21,7 +21,7 @@ from typing import List
 import random
 import os
 from ast import literal_eval
-from models import perform_inference
+from models import perform_inference, NpEncoder
 import json
 
 class Worker:
@@ -980,13 +980,13 @@ class Worker:
                     # create new file with the result
                     filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}"
                     with open(DOWNLOAD_PATH + filename, 'w') as fout:
-                        json_dumps_str = json.dumps(results, indent=4)
+                        json_dumps_str = json.dumps(results, indent=4, cls=NpEncoder)
                         print(json_dumps_str, file=fout)
                     
                     print(f"written output to file {filename}")
                     
                     # upload it to SDFS
-                    
+
 
                 
                 else:
