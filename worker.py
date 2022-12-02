@@ -774,33 +774,48 @@ class Worker:
 
         return all_files
     
-    async def download_all_files(self, all_files):
+    async def download_all_files(self, all_files, output_dir):
         for f in all_files:
-            await self.get_cli(f, DOWNLOAD_PATH + f)
-        print("downloaded all the files.")
+            await self.get_cli(f, output_dir + f)
         
-    def merge_all_json_files(self, all_files, output_file):
         downloaded_files = []
+        failed_files = []
         for f in all_files:
-            if os.path.exists(DOWNLOAD_PATH + f):
+            if not os.path.exists(output_dir + f):
+                failed_files.append(f)
+            else:
                 downloaded_files.append(f)
         
+        if len(failed_files):
+            print(f"Failed to download {len(failed_files)} files: {failed_files}")
+
+        return downloaded_files
+        
+    def merge_all_json_files(self, all_files, local_dir, output_file):
+        
+        available_files = []
+        for f in all_files:
+            if os.path.exists(local_dir + f):
+                available_files.append(f)
+        
         # merge all the files into a single json file
-        if len(downloaded_files) == 0:
+        if len(available_files) == 0:
             print("requested files are not available in provided directory")
             return 
         
-        f1 = open(DOWNLOAD_PATH + downloaded_files[0])
+        f1 = open(local_dir + available_files[0])
         final_output = json.loads(f1)
         f1.close()
 
-        for f in downloaded_files[1:]:
-            with open(DOWNLOAD_PATH + f) as f1:
+        for f in available_files[1:]:
+            with open(local_dir + f) as f1:
                 new_dict = json.loads(f1)
                 final_output = Merge(final_output, new_dict)
         
         # create new file with the result               
         dump_to_file(final_output, output_file)
+
+        print(f"written final data into {local_dir + output_file}")
 
     async def put_cli(self, localfilename, sdfsfilename):
         
@@ -815,6 +830,14 @@ class Worker:
         await asyncio.wait([self._waiting_for_second_leader_event.wait()])
         del self._waiting_for_second_leader_event
         self._waiting_for_second_leader_event = None
+    
+    async def ls_all_cli(self, file_pattern):
+        matched_files = []
+        if self.isCurrentNodeLeader():
+            matched_files = self.leaderObj.get_all_matching_files(file_pattern)
+        else:
+            matched_files = await self.get_all_files(file_pattern)
+        return matched_files
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
@@ -844,6 +867,7 @@ class Worker:
             print('commands:')
             print(' * put <localfilename> <sdfsfilename>')
             print(' * get <sdfsfilename> <localfilename>')
+            print(' * get-all <sdfsfilepattern> <local_dir>')
             print(' * delete <sdfsfilename>')
             print(' * ls <sdfsfilename>')
             print(' * ls-all <sdfsfilepattern>')
@@ -1060,16 +1084,54 @@ class Worker:
                     
                     start_time = time()
                     file_pattern = options[1]
-                    if self.isCurrentNodeLeader():
-                        matched_files = self.leaderObj.get_all_matching_files(file_pattern)
-                        print(f"{len(matched_files)} files in SDFS matching {file_pattern}: \n{matched_files}")
-                    else:
-                        matched_files = await self.get_all_files(file_pattern)
-                        print(f"{len(matched_files)} files in SDFS matching {file_pattern}: \n{matched_files}")
-                    
+                    matched_files = await self.ls_all_cli(file_pattern)
+                    print(f"{len(matched_files)} files in SDFS matching {file_pattern}: \n{matched_files}")
                     print(f"LS-ALL runtime: {time() - start_time} seconds")
 
+                elif cmd == "get-all":
+                    
+                    if len(options) != 3:
+                        print('invalid options for get-all command.')
+                        continue
+                    
+                    start_time = time()
+                    sdfsfilepattern = options[1]
+                    local_dir = options[2]
+                    if not os.path.isdir(local_dir):
+                        print("Invalid local directory provided")
+                        continue
+
+                    matched_files = await self.ls_all_cli(sdfsfilepattern)
+
+                    downloaded_files = await self.download_all_files(matched_files, DOWNLOAD_PATH)
+
+                    print(f"{len(downloaded_files)} files downloaded!!!\n{downloaded_files}")
+                    
+                    print(f"GET-ALL runtime: {time() - start_time} seconds")
                 
+                elif cmd == "get-output":
+
+                    if len(options) != 2:
+                        print('invalid options for get-output command.')
+                        continue
+                        
+                    start_time = time()
+                    jobid = options[1]
+                    
+                    filepattern = f"output_{jobid}_*.json"
+                    matched_files = await self.ls_all_cli(filepattern)
+
+                    downloaded_files = await self.download_all_files(matched_files, DOWNLOAD_PATH)
+
+                    print(f"{len(downloaded_files)} files downloaded!!!\n{downloaded_files}")
+
+                    output_file = f"final_{jobid}.json"
+
+                    self.merge_all_json_files(downloaded_files, DOWNLOAD_PATH, output_file)
+                    
+                    print(f"GET-OUTPUT runtime: {time() - start_time} seconds")
+
+
                 else:
                     print('invalid option.')
 
