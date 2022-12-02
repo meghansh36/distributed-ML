@@ -810,7 +810,7 @@ class Worker:
         for f in available_files[1:]:
             with open(local_dir + f, encoding='utf-8') as f1:
                 new_dict = json.loads(f1.read())
-                final_output = Merge(final_output, new_dict)
+                Merge(new_dict, final_output)
         
         # create new file with the result               
         dump_to_file(final_output, output_file)
