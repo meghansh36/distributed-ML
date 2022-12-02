@@ -2,6 +2,7 @@ from nodes import Node
 import hashlib
 from random import random, seed
 from config import Config
+import fnmatch 
 
 class Leader:
 
@@ -99,6 +100,15 @@ class Leader:
             if sdfsFileName in machine_file_dict:
                 machineids_filenames[machineid] = machine_file_dict[sdfsFileName]
         return machineids_filenames
+    
+    def get_all_matching_files(self, pattern):
+
+        matching_files = []
+        for _, machine_file_dict in self.global_file_dict.items():
+            for sdfsFileName, _ in machine_file_dict.items():
+                if fnmatch.fnmatch(sdfsFileName, pattern):
+                    matching_files.append(sdfsFileName)
+        return matching_files
 
     def create_new_status_for_file(self, filename: str, filepath:str, requestingNode: Node, request_type: str):
         self.status_dict[filename] = {

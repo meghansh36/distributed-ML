@@ -21,7 +21,7 @@ from typing import List
 import random
 import os
 from ast import literal_eval
-from models import perform_inference, NpEncoder
+from models import perform_inference, NpEncoder, Merge, dump_to_file
 import json
 
 class Worker:
@@ -454,10 +454,23 @@ class Worker:
                     sdfsFileName = packet.data['filename']
                     machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(sdfsFileName)
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_REQUEST_ACK, {'filename': sdfsFileName, 'machineids_with_file_versions': machineids_with_filenames}).pack())
-
+            
             elif packet.type == PacketType.GET_FILE_REQUEST_ACK:
                 self.get_file_sdfsfilename = packet.data['filename']
                 self.get_file_machineids_with_file_versions = packet.data["machineids_with_file_versions"]
+                if self._waiting_for_leader_event is not None:
+                    self._waiting_for_leader_event.set()
+            
+            elif packet.type == PacketType.GET_FILE_NAMES_REQUEST:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    file_pattern = packet.data['filepattern']
+                    all_filenames = self.leaderObj.get_all_matching_files(file_pattern)
+                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_REQUEST_ACK, {'filepattern': file_pattern, 'files': all_filenames}).pack())
+
+            elif packet.type == PacketType.GET_FILE_REQUEST_ACK:
+                self.get_file_sdfsfilename = packet.data['filepattern']
+                self.get_file_machineids_with_file_versions = packet.data["files"]
                 if self._waiting_for_leader_event is not None:
                     self._waiting_for_leader_event.set()
 
@@ -600,6 +613,11 @@ class Worker:
 
         await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_REQUEST, {'filename': sdfsfilename}).pack())
         await self._wait_for_leader(20)
+    
+    async def send_get_filenames_request_to_leader(self, file_pattern):
+        """function to send the GET_FILENAMES request to the leader from the client"""
+        await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_NAMES_REQUEST, {'filepattern': file_pattern}).pack())
+        await self._wait_for_leader(20)
 
     def isCurrentNodeLeader(self):
         """Function to check if this node is the leader"""
@@ -741,6 +759,49 @@ class Worker:
             del self._waiting_for_leader_event
             self._waiting_for_leader_event = None
     
+    async def get_all_files(self, pattern):
+        
+        await self.send_get_filenames_request_to_leader(pattern)
+        
+        all_files = []
+        if self.get_file_machineids_with_file_versions is not None and self.get_file_sdfsfilename is not None:
+            all_files = self.get_file_machineids_with_file_versions
+            self.get_file_machineids_with_file_versions = None
+            self.get_file_sdfsfilename = None
+        
+        del self._waiting_for_leader_event
+        self._waiting_for_leader_event = None
+
+        return all_files
+    
+    async def download_all_files(self, all_files):
+        for f in all_files:
+            await self.get_cli(f, DOWNLOAD_PATH + f)
+        print("downloaded all the files.")
+        
+    def merge_all_json_files(self, all_files, output_file):
+        downloaded_files = []
+        for f in all_files:
+            if os.path.exists(DOWNLOAD_PATH + f):
+                downloaded_files.append(f)
+        
+        # merge all the files into a single json file
+        if len(downloaded_files) == 0:
+            print("requested files are not available in provided directory")
+            return 
+        
+        f1 = open(DOWNLOAD_PATH + downloaded_files[0])
+        final_output = json.loads(f1)
+        f1.close()
+
+        for f in downloaded_files[1:]:
+            with open(DOWNLOAD_PATH + f) as f1:
+                new_dict = json.loads(f1)
+                final_output = Merge(final_output, new_dict)
+        
+        # create new file with the result               
+        dump_to_file(final_output, output_file)
+
     async def put_cli(self, localfilename, sdfsfilename):
         
         if not path.exists(localfilename):
@@ -785,6 +846,7 @@ class Worker:
             print(' * get <sdfsfilename> <localfilename>')
             print(' * delete <sdfsfilename>')
             print(' * ls <sdfsfilename>')
+            print(' * ls-all <sdfsfilepattern>')
             print(' * store')
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
             print('')
@@ -956,7 +1018,7 @@ class Worker:
 
                     job_id = random.randrange(1, 100000)
                     try:
-                        job_id = int(option[2])
+                        job_id = literal_eval(options[2])
                     except:
                         pass
  
@@ -982,15 +1044,31 @@ class Worker:
                     results = await self.run_inference(model, images)
 
                     # create new file with the result
-                    filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"
-                    with open(DOWNLOAD_PATH + filename, 'w') as fout:
-                        json_dumps_str = json.dumps(results, indent=4, cls=NpEncoder)
-                        print(json_dumps_str, file=fout)
+                    filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
+                    dump_to_file(results, DOWNLOAD_PATH + filename)
                     
                     print(f"written output to file {filename}")
                     
                     # upload it to SDFS
                     await self.put_cli(DOWNLOAD_PATH + filename, filename)
+                
+                elif cmd == "ls-all":
+                    
+                    if len(options) != 2:
+                        print('invalid options for ls-all command.')
+                        continue
+                    
+                    start_time = time()
+                    file_pattern = options[1]
+                    if self.isCurrentNodeLeader():
+                        matched_files = self.leaderObj.get_all_matching_files(file_pattern)
+                        print(f"{len(matched_files)} files in SDFS matching {file_pattern}: \n{matched_files}")
+                    else:
+                        matched_files = await self.get_all_files(file_pattern)
+                        print(f"{len(matched_files)} files in SDFS matching {file_pattern}: \n{matched_files}")
+                    
+                    print(f"LS-ALL runtime: {time() - start_time} seconds")
+
                 
                 else:
                     print('invalid option.')

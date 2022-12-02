@@ -93,3 +93,11 @@ class NpEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
+
+def Merge(dict1, dict2):
+    return(dict2.update(dict1))
+
+def dump_to_file(d, filename):
+    with open(filename, 'w') as fout:
+        json_dumps_str = json.dumps(d, indent=4, cls=NpEncoder)
+        print(json_dumps_str, file=fout)
