@@ -1175,6 +1175,8 @@ class Worker:
                     # send this command to coordinator
                     await self.send_submit_job_request_to_leader(model, images_option)
 
+                    print(f"coordinator recevied JOB request and assigned jobid: {self.current_job_id}")
+
                     # event = Event()
                     # self._waiting_for_second_leader_event = event
                     # await asyncio.wait([self._waiting_for_second_leader_event.wait()])
