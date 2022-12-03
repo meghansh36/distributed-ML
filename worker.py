@@ -525,7 +525,8 @@ class Worker:
 
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
-                    await self.predict_locally_cli(model, images, jobid)
+                    # await self.predict_locally_cli(model, images, jobid)
+                    self.predict_locally_cli_without_async(model, images, jobid)
                 
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
@@ -965,7 +966,41 @@ class Worker:
         print(f"written output to file {filename}")
         
         # upload it to SDFS
+        await self.put_cli(DOWNLOAD_PATH + filename, filename)
+    
+    def predict_locally_cli_without_async(self, model, p_images, job_id):
+
+        images = []
+        try:
+            images_option = p_images
+            if isinstance(images_option, int):
+                dir_list = os.listdir(TEST_FILES_PATH)
+                if images_option > len(dir_list) or images_option <= 0:
+                    images = dir_list
+                else:
+                    images = random.sample(dir_list, images_option)
+            elif isinstance(images_option, list):
+                images = images_option
+            else:
+                print('invalid images provided')
+                return
+        except:
+            images.append(images_option)
+        
+        # perform prediction on all the images
+        # await self.run_inference_on_testfiles(model, images)
+        # results = await self.run_inference(model, images)
+        results = self.run_inference_without_async(model, images)
+
+        # create new file with the result
+        filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
+        dump_to_file(results, DOWNLOAD_PATH + filename)
+        
+        print(f"written output to file {filename}")
+        
+        # upload it to SDFS
         # await self.put_cli(DOWNLOAD_PATH + filename, filename)
+
     
     async def get_output_cli(self, jobid):
         filepattern = f"output_{jobid}_*.json"
