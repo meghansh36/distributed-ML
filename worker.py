@@ -525,8 +525,8 @@ class Worker:
 
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
-                    await self.predict_locally_cli(model, images, jobid)
-                    # filename = self.predict_locally_cli_without_async(model, images, jobid)
+                    # await self.predict_locally_cli(model, images, jobid)
+                    filename = self.predict_locally_cli_without_async(model, images, jobid)
 
                     # upload it to SDFS
                     await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
