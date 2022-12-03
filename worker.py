@@ -523,7 +523,7 @@ class Worker:
 
                     print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={images_count}")
 
-                    # await self.predict_locally_cli(model, images_count, jobid)
+                    await self.predict_locally_cli(model, images_count, jobid)
 
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
