@@ -525,7 +525,7 @@ class Worker:
 
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
-                    # await self.predict_locally_cli(model, images, jobid)
+                    await self.predict_locally_cli(model, images, jobid)
                 
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
@@ -933,7 +933,7 @@ class Worker:
         print(f"written output to file {filename}")
         
         # upload it to SDFS
-        await self.put_cli(DOWNLOAD_PATH + filename, filename)
+        # await self.put_cli(DOWNLOAD_PATH + filename, filename)
     
     async def get_output_cli(self, jobid):
         filepattern = f"output_{jobid}_*.json"
