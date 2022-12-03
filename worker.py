@@ -506,7 +506,7 @@ class Worker:
                 jobid = packet.data['jobid']
                 print(f'Job#{jobid} SUCCESSFULLY Completed')
 
-                await self.get_output_cli(jobid)
+                # await self.get_output_cli(jobid)
 
                 if self._waiting_for_leader_event is not None:
                     self._waiting_for_leader_event.set()
