@@ -493,8 +493,8 @@ class Worker:
                     model = packet.data['model']
                     images_count = packet.data['images_count']
                     self.job_count += 1
-                    await self.schedule_job(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
+                    await self.schedule_job(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
             
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
                 self.current_job_id = packet.data['jobid']
