@@ -47,7 +47,7 @@ class Worker:
         self.job_reqester_dict = {}
         self.job_task_dict = {}
 
-        self.worker_nodes = [H3, H4, H5, H6, H7, H8, H9, H10]
+        self.worker_nodes = [H3.unique_name, H4.unique_name, H5.unique_name, H6.unique_name, H7.unique_name, H8.unique_name, H9.unique_name, H10.unique_name]
 
         self.workers_tasks_dict = {
         }
@@ -253,7 +253,8 @@ class Worker:
                     result_dict[image] = machineids_with_filenames
 
                 # forward the request to VMs
-                await self.io.send(worker.host, worker.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
+                workernode = Config.get_node_from_unique_name(worker)
+                await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -276,11 +277,11 @@ class Worker:
             for event in waiting:
                 event.set()
     
-    async def handle_worker_task_request(self, curr_node, model, req_images, jobid):
+    async def handle_worker_task_request(self, curr_node, model, req_images, jobid, batchid):
         try:
             logging.info(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
             # perform prediction
-            filename = await self.predict_locally_cli(model, req_images, jobid)
+            filename = await self.predict_locally_cli(model, req_images, jobid, batchid)
             # upload it to SDFS
             logging.info(f"JOB#{jobid}: uploading result file:{filename} to SDFS")
             await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
@@ -289,7 +290,7 @@ class Worker:
 
             # send response to cordinator
             logging.info(f"ACK for JOB#{jobid}")
-            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
+            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid, "batchid": batchid, "model": model}).pack())
             # del self.job_task_dict[jobid]
         except asyncio.CancelledError as e:
             logging.info(f"Stopping the JOB#{jobid}")
@@ -656,20 +657,42 @@ class Worker:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
                     jobid = packet.data['jobid']
+                    batchid = packet.data['batchid']
                     model = packet.data['model']
                     req_images = packet.data['images']
-                    task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid))
+                    task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid, batchid))
                     self.job_task_dict[jobid] = task
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
-                print("RECEIVED ACK FROM 2")
-                jobid = packet.data['jobid']
-                if jobid in self.job_reqester_dict:
-                    req_node = self.job_reqester_dict[jobid]["request_node"]
-                    self.job_reqester_dict[jobid]["num_of_batches_pending"] -= 1
-                    if self.job_reqester_dict[jobid]["num_of_batches_pending"] == 0:
-                        await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
-            
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    print("RECEIVED ACK FROM 2")
+                    jobid = packet.data['jobid']
+                    batchid = packet.data['batchid']
+                    model = packet.data['model']
+                    if jobid in self.job_reqester_dict:
+                        
+                        index = -1
+                        i = 0
+                        for batch_dict in self.model_dict[model]["inprogress_queue"]:
+                            if batch_dict["job_id"] == jobid and batch_dict["batch_id"] == batchid:
+                                index = i
+                                break
+                            i += 1
+
+                        if index != -1:
+                            self.model_dict[model]["inprogress_queue"].pop(index)
+
+                        del self.workers_tasks_dict[curr_node.unique_name]
+
+                        req_node = self.job_reqester_dict[jobid]["request_node"]
+                        self.job_reqester_dict[jobid]["num_of_batches_pending"] -= 1
+                        if self.job_reqester_dict[jobid]["num_of_batches_pending"] == 0:
+                            await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
+
+                    # asyncio.create_task(self.schedule_job())
+                    await self.schedule_job()
+                
             elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
@@ -1092,14 +1115,14 @@ class Worker:
             matched_files = await self.get_all_files(file_pattern)
         return matched_files
     
-    async def predict_locally_cli(self, model, p_images, job_id):
+    async def predict_locally_cli(self, model, p_images, job_id, batch_id=0):
         
         # perform prediction on all the images
         # await self.run_inference_on_testfiles(model, images)
         results = await self.run_inference_cli(model, p_images)
 
         # create new file with the result
-        filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
+        filename = f"output_{job_id}_{batch_id}_{self.config.node.host.split('.')[0]}.json"                    
         dump_to_file(results, DOWNLOAD_PATH + filename)
         
         print(f"written output to file {filename}")
