@@ -525,8 +525,8 @@ class Worker:
 
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
-                    # await self.predict_locally_cli(model, images, jobid)
-                    filename = self.predict_locally_cli_without_async(model, images, jobid)
+                    await self.predict_locally_cli(model, images, jobid)
+                    # filename = self.predict_locally_cli_without_async(model, images, jobid)
 
                     # upload it to SDFS
                     await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
@@ -813,35 +813,7 @@ class Worker:
         print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
 
         return results
-    
-    async def run_inference(self, model, images):
-        start_time = time()
-
-        # download all the images locally
-        failed_images = []
-        images_full_path = []
-        for image in images:
-            if os.path.exists(image):
-                images_full_path.append(image)
-            elif os.path.exists(DOWNLOAD_PATH + image):
-                images_full_path.append(DOWNLOAD_PATH + image)
-            else:
-                await self.get_cli(image, DOWNLOAD_PATH + image)
-                if os.path.exists(DOWNLOAD_PATH + image):
-                    images_full_path.append(DOWNLOAD_PATH + image)
-                else:
-                    failed_images.append(image)
         
-        print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
-        results = await perform_inference(model, images_full_path)
-
-        for failed_image in failed_images:
-            results[failed_image] = "Failed to download file from SDFS"
-
-        print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
-
-        return results
-    
     def run_inference_without_async(self, model, images):
 
         start_time = time()
@@ -875,6 +847,22 @@ class Worker:
 
     
     async def get_cli(self, sdfsfilename, localfilename):
+        if self.isCurrentNodeLeader():
+            logging.info(f"fetching machine details locally about {sdfsfilename}.")
+            machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(sdfsfilename)
+            await self.get_file_locally(machineids_with_filenames=machineids_with_filenames, sdfsfilename=sdfsfilename, localfilename=localfilename)
+        else:
+            logging.info(f"fetching machine details where the {sdfsfilename} is stored from Leader.")
+            await self.send_get_file_request_to_leader(sdfsfilename)
+            if self.get_file_machineids_with_file_versions is not None and self.get_file_sdfsfilename is not None:
+                await self.get_file_locally(machineids_with_filenames=self.get_file_machineids_with_file_versions, sdfsfilename=self.get_file_sdfsfilename, localfilename=localfilename)
+                self.get_file_machineids_with_file_versions = None
+                self.get_file_sdfsfilename = None
+
+            del self._waiting_for_leader_event
+            self._waiting_for_leader_event = None
+    
+    async def get_cli_nowait(self, sdfsfilename, localfilename):
         if self.isCurrentNodeLeader():
             logging.info(f"fetching machine details locally about {sdfsfilename}.")
             machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(sdfsfilename)
@@ -1019,8 +1007,6 @@ class Worker:
             images.append(images_option)
         
         # perform prediction on all the images
-        # await self.run_inference_on_testfiles(model, images)
-        # results = await self.run_inference(model, images)
         results = self.run_inference_without_async(model, images)
 
         # create new file with the result
@@ -1031,7 +1017,6 @@ class Worker:
 
         return filename
 
-    
     async def get_output_cli(self, jobid):
         filepattern = f"output_{jobid}_*.json"
         matched_files = await self.ls_all_cli(filepattern)
