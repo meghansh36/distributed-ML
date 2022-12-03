@@ -6,7 +6,7 @@ from asyncio import Event, exceptions
 from time import time
 from weakref import WeakSet, WeakKeyDictionary
 from typing import final, Final, NoReturn, Optional
-from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH
+from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH, H2, H3
 from nodes import Node
 from packets import Packet, PacketType
 from protocol import AwesomeProtocol
@@ -44,6 +44,7 @@ class Worker:
         self.get_file_machineids_with_file_versions = None
         self.job_count = 0
         self.current_job_id = 0
+        self.job_reqester_dict = {}
 
     def initialize(self, config: Config, globalObj: Global) -> None:
         """Function to initialize all the required class for Worker"""
@@ -129,6 +130,15 @@ class Worker:
         else:
             logging.info(f"Found file {filename} locally")
             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_ACK, response).pack())
+    
+    async def schedule_job(self, req_node, model, number_of_images, job_id):
+        
+        logging.debug(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
+
+        self.job_reqester_dict[job_id] = req_node
+
+        # forward the request to VMs
+        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": job_id, "model": model, "images_count": number_of_images}).pack())
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -481,15 +491,49 @@ class Worker:
                 if curr_node:
                     model = packet.data['model']
                     images_count = packet.data['images_count']
-                    # schedule the job on VMs
                     self.job_count += 1
+                    await self.schedule_job(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
             
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
                 self.current_job_id = packet.data['jobid']
                 if self._waiting_for_leader_event is not None:
                     self._waiting_for_leader_event.set()
+            
+            elif packet.type == PacketType.SUBMIT_JOB_REQUEST_SUCCESS:
+                jobid = packet.data['jobid']
+                print(f'Job#{jobid} SUCCESSFULLY Completed')
 
+                await self.get_output_cli(jobid)
+
+                if self._waiting_for_leader_event is not None:
+                    self._waiting_for_leader_event.set()
+
+                if self._waiting_for_second_leader_event is not None:
+                    self._waiting_for_second_leader_event.set()
+            
+            elif packet.type == PacketType.WORKER_TASK_REQUEST:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    jobid = packet.data['jobid']
+                    model = packet.data['model']
+                    images_count = packet.data['images_count']
+
+                    await self.predict_locally_cli(model, images_count, jobid)
+
+                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': self.jobid}).pack())
+            
+            elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
+                
+                jobid = packet.data['jobid']
+
+                if jobid in self.job_reqester_dict:
+
+                    req_node = self.job_reqester_dict[jobid]
+
+                    del self.job_reqester_dict[jobid]
+
+                    await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
 
     async def _wait(self, node: Node, timeout: float) -> bool:
         """Function to wait for ACKs after PINGs"""
@@ -857,6 +901,50 @@ class Worker:
         else:
             matched_files = await self.get_all_files(file_pattern)
         return matched_files
+    
+    async def predict_locally_cli(self, model, p_images, job_id):
+        
+        images = []
+        try:
+            images_option = p_images
+            if isinstance(images_option, int):
+                dir_list = os.listdir(TEST_FILES_PATH)
+                if images_option > len(dir_list) or images_option <= 0:
+                    images = dir_list
+                else:
+                    images = random.sample(dir_list, images_option)
+            elif isinstance(images_option, list):
+                images = images_option
+            else:
+                print('invalid images provided')
+                return
+        except:
+            images.append(images_option)
+        
+        # perform prediction on all the images
+        # await self.run_inference_on_testfiles(model, images)
+        results = await self.run_inference(model, images)
+
+        # create new file with the result
+        filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
+        dump_to_file(results, DOWNLOAD_PATH + filename)
+        
+        print(f"written output to file {filename}")
+        
+        # upload it to SDFS
+        await self.put_cli(DOWNLOAD_PATH + filename, filename)
+    
+    async def get_output_cli(self, jobid):
+        filepattern = f"output_{jobid}_*.json"
+        matched_files = await self.ls_all_cli(filepattern)
+
+        downloaded_files = await self.download_all_files(matched_files, DOWNLOAD_PATH)
+
+        print(f"{len(downloaded_files)} files downloaded!!!\n{downloaded_files}")
+
+        output_file = f"final_{jobid}.json"
+
+        self.merge_all_json_files(downloaded_files, DOWNLOAD_PATH, output_file)
 
     async def check_user_input(self):
         """Function to ask for user input and handles"""
@@ -1065,7 +1153,7 @@ class Worker:
                         job_id = literal_eval(options[2])
                     except:
                         pass
- 
+
                     images = []
                     try:
                         images_option = literal_eval(options[3])
@@ -1083,18 +1171,7 @@ class Worker:
                     except:
                         images.append(images_option)
                     
-                    # perform prediction on all the images
-                    # await self.run_inference_on_testfiles(model, images)
-                    results = await self.run_inference(model, images)
-
-                    # create new file with the result
-                    filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
-                    dump_to_file(results, DOWNLOAD_PATH + filename)
-                    
-                    print(f"written output to file {filename}")
-                    
-                    # upload it to SDFS
-                    await self.put_cli(DOWNLOAD_PATH + filename, filename)
+                    await self.predict_locally_cli(model, images, job_id)
 
                 elif cmd == "ls-all":
                     
@@ -1137,17 +1214,8 @@ class Worker:
                         
                     start_time = time()
                     jobid = options[1]
-                    
-                    filepattern = f"output_{jobid}_*.json"
-                    matched_files = await self.ls_all_cli(filepattern)
 
-                    downloaded_files = await self.download_all_files(matched_files, DOWNLOAD_PATH)
-
-                    print(f"{len(downloaded_files)} files downloaded!!!\n{downloaded_files}")
-
-                    output_file = f"final_{jobid}.json"
-
-                    self.merge_all_json_files(downloaded_files, DOWNLOAD_PATH, output_file)
+                    await self.get_output_cli(jobid)
                     
                     print(f"GET-OUTPUT runtime: {time() - start_time} seconds")
 
