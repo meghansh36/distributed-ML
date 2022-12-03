@@ -15,9 +15,13 @@ from functools import partial
 from typing import List
 import json
 
-def run_inference_on_InceptionV3(image_files: list):
+model1 = InceptionV3(weights='imagenet')
+model2 = ResNet50(weights='imagenet')
 
-    modelObj = InceptionV3(weights='imagenet')
+def run_inference_on_InceptionV3(image_files: list, modelObj = None):
+
+    if modelObj is None:
+        modelObj = InceptionV3(weights='imagenet')
 
     results = {}
     
@@ -39,9 +43,10 @@ def run_inference_on_InceptionV3(image_files: list):
 
     return results
 
-def run_inference_on_ResNet50(image_files: list):
+def run_inference_on_ResNet50(image_files: list, modelObj = None):
 
-    modelObj = ResNet50(weights='imagenet')
+    if modelObj is None:
+        modelObj = ResNet50(weights='imagenet')
 
     results = {}
     
@@ -86,14 +91,17 @@ async def perform_inference(model_name, files):
 def perform_inference_without_async(model_name, files):
 
     function = None
+    modelObj = None
     if model_name == "InceptionV3":
         function = run_inference_on_InceptionV3
+        modelObj = model1
     elif model_name == "ResNet50":
         function = run_inference_on_ResNet50
+        modelObj = model2
     else:
         return "Invalid model"
     
-    return function(files)
+    return function(files, modelObj=modelObj)
 
 
 class NpEncoder(json.JSONEncoder):
