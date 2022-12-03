@@ -21,7 +21,7 @@ from typing import List
 import random
 import os
 from ast import literal_eval
-from models import perform_inference, NpEncoder, Merge, dump_to_file
+from models import perform_inference, NpEncoder, Merge, dump_to_file, perform_inference_without_async
 import json
 
 class Worker:
@@ -809,6 +809,38 @@ class Worker:
         print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
 
         return results
+    
+    def run_inference_without_async(self, model, images):
+
+        start_time = time()
+
+        # download all the images locally
+        failed_images = []
+        images_full_path = []
+        for image in images:
+            if os.path.exists(image):
+                images_full_path.append(image)
+            elif os.path.exists(DOWNLOAD_PATH + image):
+                images_full_path.append(DOWNLOAD_PATH + image)
+            # else:
+            #     await self.get_cli(image, DOWNLOAD_PATH + image)
+            #     if os.path.exists(DOWNLOAD_PATH + image):
+            #         images_full_path.append(DOWNLOAD_PATH + image)
+            #     else:
+            #         failed_images.append(image)
+        
+        print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
+        # results = await perform_inference(model, images_full_path)
+
+        results = perform_inference_without_async(model, images_full_path)
+
+        for failed_image in failed_images:
+            results[failed_image] = "Failed to download file from SDFS"
+
+        print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
+
+        return results
+
     
     async def get_cli(self, sdfsfilename, localfilename):
         if self.isCurrentNodeLeader():

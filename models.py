@@ -83,6 +83,19 @@ async def perform_inference(model_name, files):
         results = await asyncio.gather(*call_coros)
         return results[0]
 
+def perform_inference_without_async(model_name, files):
+
+    function = None
+    if model_name == "InceptionV3":
+        function = run_inference_on_InceptionV3
+    elif model_name == "ResNet50":
+        function = run_inference_on_ResNet50
+    else:
+        return "Invalid model"
+    
+    return function(files)
+
+
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -101,3 +114,4 @@ def dump_to_file(d, filename):
     with open(filename, 'w') as fout:
         json_dumps_str = json.dumps(d, indent=4, cls=NpEncoder)
         print(json_dumps_str, file=fout)
+
