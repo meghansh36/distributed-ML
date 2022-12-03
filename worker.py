@@ -786,6 +786,34 @@ class Worker:
         await perform_inference(model, images)
         print(f"{model} Inference on {len(images)} images took {time() - start_time}")
     
+    async def run_inference_cli(self, model, images):
+        start_time = time()
+
+        # download all the images locally
+        failed_images = []
+        images_full_path = []
+        for image in images:
+            if os.path.exists(image):
+                images_full_path.append(image)
+            elif os.path.exists(DOWNLOAD_PATH + image):
+                images_full_path.append(DOWNLOAD_PATH + image)
+            else:
+                await self.get_cli(image, DOWNLOAD_PATH + image)
+                if os.path.exists(DOWNLOAD_PATH + image):
+                    images_full_path.append(DOWNLOAD_PATH + image)
+                else:
+                    failed_images.append(image)
+        
+        print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
+        results = await perform_inference(model, images_full_path)
+
+        for failed_image in failed_images:
+            results[failed_image] = "Failed to download file from SDFS"
+
+        print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
+
+        return results
+    
     async def run_inference(self, model, images):
         start_time = time()
 
@@ -960,7 +988,7 @@ class Worker:
         
         # perform prediction on all the images
         # await self.run_inference_on_testfiles(model, images)
-        results = await self.run_inference(model, images)
+        results = await self.run_inference_cli(model, images)
 
         # create new file with the result
         filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
@@ -970,7 +998,7 @@ class Worker:
         
         # upload it to SDFS
         await self.put_cli(DOWNLOAD_PATH + filename, filename)
-    
+
     def predict_locally_cli_without_async(self, model, p_images, job_id):
 
         images = []
