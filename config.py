@@ -5,9 +5,9 @@ M: final = 3
 
 PING_TIMEOOUT: final = 4
 
-PING_DURATION: final = 5
+PING_DURATION: final = 10
 
-CLEANUP_TIME: final = 20
+CLEANUP_TIME: final = 30
 
 TEST_FILES_PATH = "/home/bachina3/MP4/awesomedml/testfiles_more/"
 

@@ -525,7 +525,7 @@ class Worker:
 
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
-                    await self.predict_locally_cli(model, images, jobid)
+                    # await self.predict_locally_cli(model, images, jobid)
                 
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
