@@ -933,7 +933,7 @@ class Worker:
         print(f"written output to file {filename}")
         
         # upload it to SDFS
-        await self.put_cli(DOWNLOAD_PATH + filename, filename)
+        # await self.put_cli(DOWNLOAD_PATH + filename, filename)
     
     async def get_output_cli(self, jobid):
         filepattern = f"output_{jobid}_*.json"
