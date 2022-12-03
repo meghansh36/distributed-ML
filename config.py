@@ -3,17 +3,25 @@ from nodes import Node
 
 M: final = 3
 
-PING_TIMEOOUT: final = 4
+PING_TIMEOOUT: final = 10
 
-PING_DURATION: final = 10
+PING_DURATION: final = 12
 
 CLEANUP_TIME: final = 30
+
+
+# TEST_FILES_PATH = "./testfiles_more/"
+
+# DOWNLOAD_PATH = "./download/"
 
 TEST_FILES_PATH = "/home/bachina3/MP4/awesomedml/testfiles_more/"
 
 DOWNLOAD_PATH = "/tmp/"
 
 # INTRODUCER_DNS_HOST = '127.0.0.1'
+# INTRODUCER_DNS_HOST = "127.0.0.1"
+# INTRODUCER_DNS_PORT = 8888
+
 INTRODUCER_DNS_HOST = "fa22-cs425-6901.cs.illinois.edu"
 INTRODUCER_DNS_PORT = 8888
 
@@ -21,7 +29,7 @@ INTRODUCER_DNS_PORT = 8888
 USERNAME = "mgoel7"
 PASSWORD = None
 
-with open('/home/bachina3/MP3/awesomesdfs/password.txt') as f:
+with open('./password.txt') as f:
     line = f.readline()
     USERNAME = line.split(',')[0].strip()
     PASSWORD = line.split(',')[1].strip()

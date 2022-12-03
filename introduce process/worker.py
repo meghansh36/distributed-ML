@@ -55,11 +55,11 @@ class Worker:
             if packet.type == PacketType.FETCH_INTRODUCER:
                 print(f'{datetime.now()}: received ping from {packet.sender}')
                 await self.io.send(host, port, Packet(self.config.node.unique_name, PacketType.FETCH_INTRODUCER_ACK, {'introducer': self.config.introducer}).pack())
-
+                print("sent ACK")
             elif packet.type == PacketType.UPDATE_INTRODUCER:
                 self.config.introducer = packet.sender
                 await self.io.send(host, port, Packet(self.config.node.unique_name, PacketType.FETCH_INTRODUCER_ACK, {'introducer': self.config.introducer}).pack())
-
+                print("sent ACK")
 
     # async def _wait(self, node: Node, timeout: float) -> bool:
     #     """Function to wait for ACKs after PINGs"""

@@ -4,6 +4,7 @@ import os, shutil
 from typing import List
 
 # SDFS_LOCATION = "/mnt/d/sdfs/" #"./sdfs/"
+# SDFS_LOCATION = './sdfs/'
 SDFS_LOCATION = '/home/bachina3/MP3/awesomesdfs/sdfs/'
 MAX_FILE_VERSIONS = 5
 

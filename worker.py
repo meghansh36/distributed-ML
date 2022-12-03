@@ -175,6 +175,8 @@ class Worker:
 
             if packet.type == PacketType.ACK or packet.type == PacketType.INTRODUCE_ACK:
                 """Instructions to execute when the node receives failure detector ACKs or ACKs from the introducer"""
+
+                print('I GOT AN ACK FROM ', packet.sender)
                 curr_node: Node = Config.get_node_from_unique_name(
                     packet.sender)
                 logging.debug(f'got ack from {curr_node.unique_name}')
@@ -196,6 +198,7 @@ class Worker:
                 """Instructions to execute once the node receives the introducer information from the Introducer DNS process"""
                 logging.debug(f'got fetch introducer ack from {self.config.introducerDNSNode.unique_name}')
                 introducer = packet.data['introducer']
+                print(introducer)
                 if introducer == self.config.node.unique_name:
                     self.leaderObj = Leader(self.config.node, self.globalObj)
                     self.globalObj.set_leader(self.leaderObj)
@@ -525,8 +528,8 @@ class Worker:
 
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
-                    # await self.predict_locally_cli(model, images, jobid)
-                    filename = self.predict_locally_cli_without_async(model, images, jobid)
+                    filename = await self.predict_locally_cli(model, images, jobid)
+                    # filename = self.predict_locally_cli_without_async(model, images, jobid)
 
                     # upload it to SDFS
                     await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
@@ -534,6 +537,7 @@ class Worker:
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
+                print("RECEIVED ACK FROM 2")
                 jobid = packet.data['jobid']
                 if jobid in self.job_reqester_dict:
                     req_node = self.job_reqester_dict[jobid]
@@ -983,9 +987,9 @@ class Worker:
         dump_to_file(results, DOWNLOAD_PATH + filename)
         
         print(f"written output to file {filename}")
-        
+        return filename
         # upload it to SDFS
-        await self.put_cli(DOWNLOAD_PATH + filename, filename)
+        # await self.put_cli(DOWNLOAD_PATH + filename, filename)
 
     def predict_locally_cli_without_async(self, model, p_images, job_id):
 
@@ -1328,11 +1332,11 @@ class Worker:
 
                     print(f"coordinator recevied JOB request and assigned jobid: {self.current_job_id}")
 
-                    event = Event()
-                    self._waiting_for_second_leader_event = event
-                    await asyncio.wait([self._waiting_for_second_leader_event.wait()])
-                    del self._waiting_for_second_leader_event
-                    self._waiting_for_second_leader_event = None
+                    # event = Event()
+                    # self._waiting_for_second_leader_event = event
+                    # await asyncio.wait([self._waiting_for_second_leader_event.wait()])
+                    # del self._waiting_for_second_leader_event
+                    # self._waiting_for_second_leader_event = None
 
                 else:
                     print('invalid option.')
