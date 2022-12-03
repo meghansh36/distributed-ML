@@ -45,6 +45,7 @@ class Worker:
         self.job_count = 0
         self.current_job_id = 0
         self.job_reqester_dict = {}
+        self.job_task_dict = {}
 
     def initialize(self, config: Config, globalObj: Global) -> None:
         """Function to initialize all the required class for Worker"""
@@ -168,14 +169,17 @@ class Worker:
                 event.set()
     
     async def handle_worker_task_request(self, curr_node, model, req_images, jobid):
-
-        print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
-        filename = await self.predict_locally_cli(model, req_images, jobid)
-        # filename = self.predict_locally_cli_without_async(model, images, jobid)
-
-        # upload it to SDFS
-        await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
-        await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
+        try:
+            print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
+            filename = await self.predict_locally_cli(model, req_images, jobid)
+            # filename = self.predict_locally_cli_without_async(model, images, jobid)
+            # upload it to SDFS
+            await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
+            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())  
+        except asyncio.CancelledError as e:
+            print(f"Stopping the JOB#{jobid}")
+        finally:
+            print(f"Task JOB#{jobid} cancelled: {datetime.now()}")
 
     async def _run_handler(self) -> NoReturn:
         """RUN the main loop which handles all the communication to external nodes"""
@@ -540,7 +544,8 @@ class Worker:
                     model = packet.data['model']
                     req_images = packet.data['images']
 
-                    asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid))
+                    task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid))
+                    self.job_task_dict[jobid] = task
 
                     # await self.handle_worker_task_request(curr_node, model, req_images, jobid)
             
@@ -1311,6 +1316,34 @@ class Worker:
                     # await asyncio.wait([self._waiting_for_second_leader_event.wait()])
                     # del self._waiting_for_second_leader_event
                     # self._waiting_for_second_leader_event = None
+                
+                elif cmd == "kill-job":
+
+                    if len(options) != 2:
+                        print('invalid options for kill-job command.')
+                        continue
+                    
+                    jobid = 0
+                    try:
+                        jobid = literal_eval(options[1])
+                        if not isinstance(images_option, int):
+                            print('invalid jobid provided')
+                            continue
+                    except:
+                        print('invalid jobid provided')
+                        continue
+
+                    if jobid in self.job_task_dict:
+
+                        task = self.job_task_dict[jobid]
+
+                        task.cancel()
+
+                        # Wait for the cancellation of task to be complete
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            print("main(): cancel_me is cancelled now")
 
                 else:
                     print('invalid option.')
