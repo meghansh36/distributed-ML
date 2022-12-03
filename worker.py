@@ -132,13 +132,19 @@ class Worker:
             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_ACK, response).pack())
     
     async def schedule_job(self, req_node, model, number_of_images, job_id):
-        
+
+        sdfs_images = await self.ls_all_cli("*.jpeg")
+        images = random.sample(sdfs_images, number_of_images)
+
+        result_dict = {}
+        for image in images:
+            machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(image)
+            result_dict[image] = machineids_with_filenames
+
         logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
-
         self.job_reqester_dict[job_id] = req_node
-
         # forward the request to VMs
-        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": job_id, "model": model, "images_count": number_of_images}).pack())
+        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": job_id, "model": model, "images": result_dict}).pack())
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -522,13 +528,11 @@ class Worker:
                 if curr_node:
                     jobid = packet.data['jobid']
                     model = packet.data['model']
-                    images_count = packet.data['images_count']
+                    req_images = packet.data['images']
 
-                    print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={images_count}")
+                    print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
 
-                    images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
-
-                    filename = await self.predict_locally_cli(model, images, jobid)
+                    filename = await self.predict_locally_cli(model, req_images, jobid)
                     # filename = self.predict_locally_cli_without_async(model, images, jobid)
 
                     # upload it to SDFS
@@ -791,23 +795,20 @@ class Worker:
         print(f"{model} Inference on {len(images)} images took {time() - start_time}")
     
     async def run_inference_cli(self, model, images):
+        
         start_time = time()
 
-        # download all the images locally
+        for image, locations in images.items():
+            await self.get_cli_nowait(image, DOWNLOAD_PATH + image, locations)
+        
         failed_images = []
         images_full_path = []
-        for image in images:
-            if os.path.exists(image):
-                images_full_path.append(image)
-            elif os.path.exists(DOWNLOAD_PATH + image):
+        for image, _ in images.items():
+            if os.path.exists(DOWNLOAD_PATH + image):
                 images_full_path.append(DOWNLOAD_PATH + image)
             else:
-                await self.get_cli(image, DOWNLOAD_PATH + image)
-                if os.path.exists(DOWNLOAD_PATH + image):
-                    images_full_path.append(DOWNLOAD_PATH + image)
-                else:
-                    failed_images.append(image)
-        
+                failed_images.append(image)
+
         print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
         results = await perform_inference(model, images_full_path)
 
@@ -849,7 +850,6 @@ class Worker:
 
         return results
 
-    
     async def get_cli(self, sdfsfilename, localfilename):
         if self.isCurrentNodeLeader():
             logging.info(f"fetching machine details locally about {sdfsfilename}.")
@@ -865,22 +865,10 @@ class Worker:
 
             del self._waiting_for_leader_event
             self._waiting_for_leader_event = None
-    
-    async def get_cli_nowait(self, sdfsfilename, localfilename):
-        if self.isCurrentNodeLeader():
-            logging.info(f"fetching machine details locally about {sdfsfilename}.")
-            machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(sdfsfilename)
-            await self.get_file_locally(machineids_with_filenames=machineids_with_filenames, sdfsfilename=sdfsfilename, localfilename=localfilename)
-        else:
-            logging.info(f"fetching machine details where the {sdfsfilename} is stored from Leader.")
-            await self.send_get_file_request_to_leader(sdfsfilename)
-            if self.get_file_machineids_with_file_versions is not None and self.get_file_sdfsfilename is not None:
-                await self.get_file_locally(machineids_with_filenames=self.get_file_machineids_with_file_versions, sdfsfilename=self.get_file_sdfsfilename, localfilename=localfilename)
-                self.get_file_machineids_with_file_versions = None
-                self.get_file_sdfsfilename = None
-
-            del self._waiting_for_leader_event
-            self._waiting_for_leader_event = None
+        
+    async def get_cli_nowait(self, sdfsfilename, localfilename, machineids_with_filenames):
+        logging.info(f"fetching machine details where the {sdfsfilename} is stored from Leader.")
+        await self.get_file_locally(machineids_with_filenames=machineids_with_filenames, sdfsfilename=self.get_file_sdfsfilename, localfilename=localfilename)
     
     async def get_all_files(self, pattern):
         
@@ -961,35 +949,17 @@ class Worker:
     
     async def predict_locally_cli(self, model, p_images, job_id):
         
-        images = []
-        try:
-            images_option = p_images
-            if isinstance(images_option, int):
-                dir_list = os.listdir(TEST_FILES_PATH)
-                if images_option > len(dir_list) or images_option <= 0:
-                    images = dir_list
-                else:
-                    images = random.sample(dir_list, images_option)
-            elif isinstance(images_option, list):
-                images = images_option
-            else:
-                print('invalid images provided')
-                return
-        except:
-            images.append(images_option)
-        
         # perform prediction on all the images
         # await self.run_inference_on_testfiles(model, images)
-        results = await self.run_inference_cli(model, images)
+        results = await self.run_inference_cli(model, p_images)
 
         # create new file with the result
         filename = f"output_{job_id}_{self.config.node.host.split('.')[0]}.json"                    
         dump_to_file(results, DOWNLOAD_PATH + filename)
         
         print(f"written output to file {filename}")
+        
         return filename
-        # upload it to SDFS
-        # await self.put_cli(DOWNLOAD_PATH + filename, filename)
 
     def predict_locally_cli_without_async(self, model, p_images, job_id):
 
