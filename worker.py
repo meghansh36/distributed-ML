@@ -6,7 +6,7 @@ from asyncio import Event, exceptions
 from time import time
 from weakref import WeakSet, WeakKeyDictionary
 from typing import final, Final, NoReturn, Optional
-from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH, H2, H3
+from config import GLOBAL_RING_TOPOLOGY, Config, PING_TIMEOOUT, PING_DURATION, USERNAME, PASSWORD, TEST_FILES_PATH, DOWNLOAD_PATH, H1, H2, H3, H4, H5, H6, H7, H8, H9, H10
 from nodes import Node
 from packets import Packet, PacketType
 from protocol import AwesomeProtocol
@@ -21,7 +21,7 @@ from typing import List
 import random
 import os
 from ast import literal_eval
-from models import perform_inference, NpEncoder, Merge, dump_to_file, perform_inference_without_async
+from models import perform_inference, NpEncoder, Merge, dump_to_file, perform_inference_without_async, ModelParameters
 import json
 
 class Worker:
@@ -46,6 +46,35 @@ class Worker:
         self.current_job_id = 0
         self.job_reqester_dict = {}
         self.job_task_dict = {}
+
+        self.worker_nodes = [H3, H4, H5, H6, H7, H8, H9, H10]
+
+        self.workers_tasks_dict = {
+        }
+
+        self.model_dict = {
+            "InceptionV3": {
+                'hyperparams' : {
+                    'batch_size' : 10, 
+                    'time': ModelParameters(download_time=1, model_load_time=5.6, first_image_predict_time=2, each_image_predict_time=0.325, batch_size=10).execution_time_per_vm()
+                    },
+                'queue': [],
+                'inprogress_queue': []
+            },
+            "ResNet50": {
+                'hyperparams' : {
+                    'batch_size' : 10, 
+                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=10).execution_time_per_vm()
+                    },
+                'queue': [],
+                'inprogress_queue': []
+            }
+        }
+    
+    def load_model_parameters(self, batch_size):
+        self.batch_size = batch_size
+        self.inceptionV3_model_params = ModelParameters(download_time=1, model_load_time=5.6, first_image_predict_time=2, each_image_predict_time=0.325, batch_size=self.batch_size)
+        self.resNet50_model_params = ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=self.batch_size)
 
     def initialize(self, config: Config, globalObj: Global) -> None:
         """Function to initialize all the required class for Worker"""
@@ -134,18 +163,85 @@ class Worker:
     
     async def schedule_job(self, req_node, model, number_of_images, job_id):
 
+        logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
+
         sdfs_images = await self.ls_all_cli("*.jpeg")
         images = random.sample(sdfs_images, number_of_images)
 
-        result_dict = {}
-        for image in images:
-            machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(image)
-            result_dict[image] = machineids_with_filenames
+        # batch images
+        batch_size = self.model_dict[model]["hyperparams"]["batch_size"]
 
-        logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
-        self.job_reqester_dict[job_id] = req_node
-        # forward the request to VMs
-        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": job_id, "model": model, "images": result_dict}).pack())
+        all_batches = []
+
+        batch = []
+        batch_id = 1
+        for image in images:
+            if len(batch) < batch_size:
+                batch.append(image)
+            else:
+                batch_dict = {
+                    "job_id": job_id,
+                    "batch_id": batch_id,
+                    "images": batch
+                }
+                all_batches.append(batch_dict)
+                batch_id += 1
+                batch = []
+                batch.append(image)
+        
+        if len(batch):
+            batch_id += 1
+            batch_dict = {
+                "job_id": job_id,
+                "batch_id": batch_id,
+                "images": batch
+            }
+            all_batches.append(batch_dict)
+            batch = []
+        
+        for all_batch in all_batches:
+            self.model_dict[model]["queue"].append(all_batch)
+        
+        self.job_reqester_dict[job_id] = {
+            "request_node": req_node,
+            "num_of_batches_pending": len(all_batches)
+        }
+
+        if len(self.model_dict["InceptionV3"]["queue"]) != 0 and len(self.model_dict["ResNet50"]["queue"]) == 0:
+
+            free_workers = list(set(self.worker_nodes) - set(list(self.workers_tasks_dict.keys())))
+
+            if len(free_workers) == 0:
+                logging.info(f"All the workers are busy will schedule if any worker becomes available")
+                return
+            
+            for worker in free_workers:
+
+                if len(self.model_dict["InceptionV3"]["queue"]) == 0:
+                    break
+                
+                single_batch_dict = self.model_dict["InceptionV3"]["queue"][0]
+
+                single_batch_jobid = single_batch_dict["job_id"]
+                single_batch_id = single_batch_dict["batch_id"]
+                images = single_batch_dict["images"]
+
+                self.workers_tasks_dict[worker] = {
+                    'model': model,
+                    'job_id': single_batch_jobid,
+                    'batch_id': single_batch_id
+                }
+
+                self.model_dict["InceptionV3"]["inprogress_queue"].append(single_batch_dict)
+                self.model_dict["InceptionV3"]["queue"].pop(0)
+
+                result_dict = {}
+                for image in images:
+                    machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(image)
+                    result_dict[image] = machineids_with_filenames
+
+                # forward the request to VMs
+                await self.io.send(worker.host, worker.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -557,9 +653,10 @@ class Worker:
                 print("RECEIVED ACK FROM 2")
                 jobid = packet.data['jobid']
                 if jobid in self.job_reqester_dict:
-                    req_node = self.job_reqester_dict[jobid]
-                    del self.job_reqester_dict[jobid]
-                    await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
+                    req_node = self.job_reqester_dict[jobid]["request_node"]
+                    self.job_reqester_dict[jobid]["num_of_batches_pending"] -= 1
+                    if self.job_reqester_dict[jobid]["num_of_batches_pending"] == 0:
+                        await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
             
             elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)

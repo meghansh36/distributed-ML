@@ -125,3 +125,16 @@ def dump_to_file(d, filename):
         json_dumps_str = json.dumps(d, indent=4, cls=NpEncoder)
         print(json_dumps_str, file=fout)
 
+class ModelParameters:
+
+    def __init__(self, download_time, model_load_time, first_image_predict_time, each_image_predict_time, batch_size) -> None:
+        
+        self.download_time = download_time
+        self.model_load_time = model_load_time
+        self.first_image_predict_time = first_image_predict_time
+        self.each_image_predict_time = each_image_predict_time
+        self.batch_size = batch_size
+    
+    def execution_time_per_vm(self):
+        return (self.download_time * self.batch_size) + self.model_load_time + self.first_image_predict_time + (self.each_image_predict_time * (self.batch_size-1))
+
