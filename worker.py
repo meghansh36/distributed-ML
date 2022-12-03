@@ -843,13 +843,15 @@ class Worker:
             else:
                 failed_images.append(image)
 
-        print(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
+        logging.info(f"{model} Download of {len(images_full_path)} images took {time() - start_time} sec")
+
+        start_time1 = time()
         results = await perform_inference(model, images_full_path)
 
         for failed_image in failed_images:
             results[failed_image] = "Failed to download file from SDFS"
 
-        print(f"{model} Inference on {len(images_full_path)} images took {time() - start_time} sec")
+        logging.info(f"{model} Inference on {len(images_full_path)} downloaded images took {time() - start_time1} sec: Total runtime of task: {time() - start_time} sec")
 
         return results
         
