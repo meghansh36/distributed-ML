@@ -529,7 +529,7 @@ class Worker:
                     filename = self.predict_locally_cli_without_async(model, images, jobid)
 
                     # upload it to SDFS
-                    await self.put_cli(DOWNLOAD_PATH + filename, filename)
+                    await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
                 
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
