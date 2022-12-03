@@ -526,7 +526,10 @@ class Worker:
                     images = [TEST_FILES_PATH + image for image in random.sample(os.listdir(TEST_FILES_PATH), images_count)]
 
                     # await self.predict_locally_cli(model, images, jobid)
-                    self.predict_locally_cli_without_async(model, images, jobid)
+                    filename = self.predict_locally_cli_without_async(model, images, jobid)
+
+                    # upload it to SDFS
+                    await self.put_cli(DOWNLOAD_PATH + filename, filename)
                 
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
@@ -997,9 +1000,8 @@ class Worker:
         dump_to_file(results, DOWNLOAD_PATH + filename)
         
         print(f"written output to file {filename}")
-        
-        # upload it to SDFS
-        # await self.put_cli(DOWNLOAD_PATH + filename, filename)
+
+        return filename
 
     
     async def get_output_cli(self, jobid):
