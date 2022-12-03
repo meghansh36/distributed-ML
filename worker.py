@@ -213,6 +213,14 @@ class Worker:
             "num_of_batches_pending": len(all_batches)
         }
     
+    def get_count_of_running_nodes(self, model):
+        count = 0
+        for worker in self.workers_tasks_dict:
+            if(self.workers_tasks_dict[worker]['model'] == model):
+                count+=1
+        return count
+
+
     async def schedule_job(self):
 
         if (len(self.model_dict["InceptionV3"]["queue"]) != 0 and len(self.model_dict["ResNet50"]["queue"]) == 0) or (len(self.model_dict["InceptionV3"]["queue"]) == 0 and len(self.model_dict["ResNet50"]["queue"]) != 0):
@@ -220,13 +228,14 @@ class Worker:
             model = "InceptionV3"
             if len(self.model_dict["InceptionV3"]["queue"]) == 0 and len(self.model_dict["ResNet50"]["queue"]) != 0:
                 model = "ResNet50"
-
+            
             free_workers = list(set(self.worker_nodes) - set(list(self.workers_tasks_dict.keys())))
 
             if len(free_workers) == 0:
                 logging.info(f"All the workers are busy will schedule if any worker becomes available")
                 return
             
+            count = 0
             for worker in free_workers:
 
                 if len(self.model_dict[model]["queue"]) == 0:
@@ -255,6 +264,36 @@ class Worker:
                 # forward the request to VMs
                 workernode = Config.get_node_from_unique_name(worker)
                 await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
+                count += 1
+            
+            logging.info(f"scheduling {count} tasks for {model}")
+        
+        else:
+
+            online_worker_node_count = len(set(list(self.membership_list.memberShipListDict.keys())) - {H1.unique_name, H2.unique_name})
+            temp = 1
+            split_job_array = []
+            while(online_worker_node_count > 1):
+                split_job_array.append([online_worker_node_count - 1, temp])
+                online_worker_node_count-=1
+                temp+=1
+            
+            differences = []
+
+            for split in split_job_array:
+                inception_vmcount, resnet_vmcount = split
+                inception_query_rate = (inception_vmcount * self.model_dict['InceptionV3']['hyperparams']['batch_size']) / self.model_dict['InceptionV3']['hyperparams']['time']
+                resnet50_query_rate = (resnet_vmcount * self.model_dict['ResNet50']['hyperparams']['batch_size']) / self.model_dict['ResNet50']['hyperparams']['time']
+
+                difference = (abs( inception_query_rate - resnet50_query_rate ) / max(inception_query_rate, resnet50_query_rate)) * 100
+                differences.append(difference)
+
+
+            min_index = differences.index(min(differences))
+
+            inception_vmcount, resnet_vmcount = split_job_array[min_index]
+
+            print(f"possible query_differences: {differences}, final split: {split_job_array[min_index]}")
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
