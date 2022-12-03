@@ -63,8 +63,8 @@ class Worker:
             },
             "ResNet50": {
                 'hyperparams' : {
-                    'batch_size' : 10, 
-                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=10).execution_time_per_vm()
+                    'batch_size' : 20, 
+                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=20).execution_time_per_vm()
                     },
                 'queue': [],
                 'inprogress_queue': []
@@ -325,7 +325,7 @@ class Worker:
             logging.info(f"JOB#{jobid}: uploading result file:{filename} to SDFS")
             await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
             
-            asyncio.sleep(0)
+            await asyncio.sleep(0)
 
             # send response to cordinator
             logging.info(f"ACK for JOB#{jobid}")
