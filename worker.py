@@ -161,7 +161,13 @@ class Worker:
             logging.info(f"Found file {filename} locally")
             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_ACK, response).pack())
     
-    async def schedule_job(self, req_node, model, number_of_images, job_id):
+    async def handle_job_request(self, req_node, model, number_of_images, job_id):
+
+        await self.preprocess_job_request(req_node, model, number_of_images, job_id)
+
+        await self.schedule_job()
+
+    async def preprocess_job_request(self, req_node, model, number_of_images, job_id):
 
         logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
 
@@ -206,8 +212,14 @@ class Worker:
             "request_node": req_node,
             "num_of_batches_pending": len(all_batches)
         }
+    
+    async def schedule_job(self):
 
-        if len(self.model_dict["InceptionV3"]["queue"]) != 0 and len(self.model_dict["ResNet50"]["queue"]) == 0:
+        if (len(self.model_dict["InceptionV3"]["queue"]) != 0 and len(self.model_dict["ResNet50"]["queue"]) == 0) or (len(self.model_dict["InceptionV3"]["queue"]) == 0 and len(self.model_dict["ResNet50"]["queue"]) != 0):
+
+            model = "InceptionV3"
+            if len(self.model_dict["InceptionV3"]["queue"]) == 0 and len(self.model_dict["ResNet50"]["queue"]) != 0:
+                model = "ResNet50"
 
             free_workers = list(set(self.worker_nodes) - set(list(self.workers_tasks_dict.keys())))
 
@@ -217,10 +229,10 @@ class Worker:
             
             for worker in free_workers:
 
-                if len(self.model_dict["InceptionV3"]["queue"]) == 0:
+                if len(self.model_dict[model]["queue"]) == 0:
                     break
                 
-                single_batch_dict = self.model_dict["InceptionV3"]["queue"][0]
+                single_batch_dict = self.model_dict[model]["queue"][0]
 
                 single_batch_jobid = single_batch_dict["job_id"]
                 single_batch_id = single_batch_dict["batch_id"]
@@ -232,8 +244,8 @@ class Worker:
                     'batch_id': single_batch_id
                 }
 
-                self.model_dict["InceptionV3"]["inprogress_queue"].append(single_batch_dict)
-                self.model_dict["InceptionV3"]["queue"].pop(0)
+                self.model_dict[model]["inprogress_queue"].append(single_batch_dict)
+                self.model_dict[model]["queue"].pop(0)
 
                 result_dict = {}
                 for image in images:
@@ -620,7 +632,7 @@ class Worker:
                     images_count = packet.data['images_count']
                     self.job_count += 1
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
-                    await self.schedule_job(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
+                    await self.handle_job_request(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
             
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
                 self.current_job_id = packet.data['jobid']
