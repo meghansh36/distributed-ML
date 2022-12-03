@@ -217,7 +217,8 @@ class Worker:
             
             elif packet.type == PacketType.ALL_LOCAL_FILES:
                 files_in_node = packet.data['all_files']
-                self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
+                if isinstance(self.leaderObj, Leader):
+                    self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
 
             elif packet.type == PacketType.PING or packet.type == PacketType.INTRODUCE:
                 # print(f'{datetime.now()}: received ping from {host}:{port}')
