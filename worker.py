@@ -1326,7 +1326,7 @@ class Worker:
                     jobid = 0
                     try:
                         jobid = literal_eval(options[1])
-                        if not isinstance(images_option, int):
+                        if not isinstance(jobid, int):
                             print('invalid jobid provided')
                             continue
                     except:
