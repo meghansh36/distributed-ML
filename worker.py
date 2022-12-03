@@ -133,7 +133,7 @@ class Worker:
     
     async def schedule_job(self, req_node, model, number_of_images, job_id):
         
-        logging.debug(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
+        logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
 
         self.job_reqester_dict[job_id] = req_node
 
@@ -497,6 +497,7 @@ class Worker:
             
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
                 self.current_job_id = packet.data['jobid']
+                print(f"Leader node ACK for Job#{self.current_job_id}")
                 if self._waiting_for_leader_event is not None:
                     self._waiting_for_leader_event.set()
             
@@ -519,20 +520,17 @@ class Worker:
                     model = packet.data['model']
                     images_count = packet.data['images_count']
 
-                    await self.predict_locally_cli(model, images_count, jobid)
+                    print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={images_count}")
 
-                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': self.jobid}).pack())
+                    # await self.predict_locally_cli(model, images_count, jobid)
+
+                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
-                
                 jobid = packet.data['jobid']
-
                 if jobid in self.job_reqester_dict:
-
                     req_node = self.job_reqester_dict[jobid]
-
                     del self.job_reqester_dict[jobid]
-
                     await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
 
     async def _wait(self, node: Node, timeout: float) -> bool:
@@ -1245,11 +1243,11 @@ class Worker:
 
                     print(f"coordinator recevied JOB request and assigned jobid: {self.current_job_id}")
 
-                    # event = Event()
-                    # self._waiting_for_second_leader_event = event
-                    # await asyncio.wait([self._waiting_for_second_leader_event.wait()])
-                    # del self._waiting_for_second_leader_event
-                    # self._waiting_for_second_leader_event = None
+                    event = Event()
+                    self._waiting_for_second_leader_event = event
+                    await asyncio.wait([self._waiting_for_second_leader_event.wait()])
+                    del self._waiting_for_second_leader_event
+                    self._waiting_for_second_leader_event = None
 
                 else:
                     print('invalid option.')
