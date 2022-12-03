@@ -42,7 +42,7 @@ class Worker:
         self._waiting_for_second_leader_event: Optional[Event] = None
         self.get_file_sdfsfilename = None
         self.get_file_machineids_with_file_versions = None
-        self.job_count = 0
+        self.job_count = 10
         self.current_job_id = 0
         self.job_reqester_dict = {}
         self.job_task_dict = {}
@@ -180,26 +180,26 @@ class Worker:
         all_batches = []
 
         batch = []
-        batch_id = 1
+        # batch_id = 1
         for image in images:
             if len(batch) < batch_size:
                 batch.append(image)
             else:
+                batch.append(image)
                 batch_dict = {
                     "job_id": job_id,
-                    "batch_id": batch_id,
+                    "batch_id": len(all_batches) + 1,
                     "images": batch
                 }
                 all_batches.append(batch_dict)
-                batch_id += 1
+                # batch_id += 1
                 batch = []
-                batch.append(image)
         
         if len(batch):
-            batch_id += 1
+            # batch_id += 1
             batch_dict = {
                 "job_id": job_id,
-                "batch_id": batch_id,
+                "batch_id": len(all_batches) + 1,
                 "images": batch
             }
             all_batches.append(batch_dict)
