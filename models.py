@@ -15,8 +15,10 @@ from functools import partial
 from typing import List
 import json
 
-model1 = InceptionV3(weights='imagenet')
-model2 = ResNet50(weights='imagenet')
+# model1 = InceptionV3(weights='imagenet')
+# model2 = ResNet50(weights='imagenet')
+model1 = None
+model2 = None
 
 def run_inference_on_InceptionV3(image_files: list, modelObj = None):
 
