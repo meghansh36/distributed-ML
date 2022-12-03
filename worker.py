@@ -170,16 +170,23 @@ class Worker:
     
     async def handle_worker_task_request(self, curr_node, model, req_images, jobid):
         try:
-            print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
+            logging.info(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
+            # perform prediction
             filename = await self.predict_locally_cli(model, req_images, jobid)
-            # filename = self.predict_locally_cli_without_async(model, images, jobid)
             # upload it to SDFS
+            logging.info(f"JOB#{jobid}: uploading result file:{filename} to SDFS")
             await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
-            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())  
+            
+            asyncio.sleep(0)
+
+            # send response to cordinator
+            logging.info(f"ACK for JOB#{jobid}")
+            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
+            # del self.job_task_dict[jobid]
         except asyncio.CancelledError as e:
-            print(f"Stopping the JOB#{jobid}")
+            logging.info(f"Stopping the JOB#{jobid}")
         finally:
-            print(f"Task JOB#{jobid} cancelled: {datetime.now()}")
+            logging.info(f"Task JOB#{jobid} cancelled")
 
     async def _run_handler(self) -> NoReturn:
         """RUN the main loop which handles all the communication to external nodes"""
@@ -543,11 +550,8 @@ class Worker:
                     jobid = packet.data['jobid']
                     model = packet.data['model']
                     req_images = packet.data['images']
-
                     task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid))
                     self.job_task_dict[jobid] = task
-
-                    # await self.handle_worker_task_request(curr_node, model, req_images, jobid)
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
                 print("RECEIVED ACK FROM 2")
@@ -556,6 +560,27 @@ class Worker:
                     req_node = self.job_reqester_dict[jobid]
                     del self.job_reqester_dict[jobid]
                     await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
+            
+            elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    jobid = packet.data['jobid']
+                    if jobid in self.job_task_dict:
+                        task = self.job_task_dict[jobid]
+                        task.cancel()
+                        # Wait for the cancellation of task to be complete
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            print("cancelled now")
+                        del self.job_task_dict[jobid]
+                    await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_KILL_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
+            
+            elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST_ACK:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    jobid = packet.data['jobid']
+                    logging.info(f"{curr_node.unique_name} killed its JOB#{jobid}")
 
     async def _wait(self, node: Node, timeout: float) -> bool:
         """Function to wait for ACKs after PINGs"""
