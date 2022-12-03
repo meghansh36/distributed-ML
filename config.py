@@ -30,7 +30,7 @@ USERNAME = "mgoel7"
 PASSWORD = None
 
 # with open('./password.txt') as f:
-with open('/home/bachina3/MP3/awesomesdfs/password.txt')
+with open('/home/bachina3/MP3/awesomesdfs/password.txt'):
     line = f.readline()
     USERNAME = line.split(',')[0].strip()
     PASSWORD = line.split(',')[1].strip()
