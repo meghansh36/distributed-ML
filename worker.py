@@ -166,6 +166,16 @@ class Worker:
         if waiting is not None:
             for event in waiting:
                 event.set()
+    
+    async def handle_worker_task_request(self, curr_node, model, req_images, jobid):
+
+        print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
+        filename = await self.predict_locally_cli(model, req_images, jobid)
+        # filename = self.predict_locally_cli_without_async(model, images, jobid)
+
+        # upload it to SDFS
+        await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
+        await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
 
     async def _run_handler(self) -> NoReturn:
         """RUN the main loop which handles all the communication to external nodes"""
@@ -182,7 +192,7 @@ class Worker:
             if packet.type == PacketType.ACK or packet.type == PacketType.INTRODUCE_ACK:
                 """Instructions to execute when the node receives failure detector ACKs or ACKs from the introducer"""
 
-                print('I GOT AN ACK FROM ', packet.sender)
+                # print('I GOT AN ACK FROM ', packet.sender)
                 curr_node: Node = Config.get_node_from_unique_name(
                     packet.sender)
                 logging.debug(f'got ack from {curr_node.unique_name}')
@@ -530,15 +540,9 @@ class Worker:
                     model = packet.data['model']
                     req_images = packet.data['images']
 
-                    print(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
+                    asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid))
 
-                    filename = await self.predict_locally_cli(model, req_images, jobid)
-                    # filename = self.predict_locally_cli_without_async(model, images, jobid)
-
-                    # upload it to SDFS
-                    await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.PUT_REQUEST, {'file_path': DOWNLOAD_PATH + filename, 'filename': filename}).pack())
-                
-                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
+                    # await self.handle_worker_task_request(curr_node, model, req_images, jobid)
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
                 print("RECEIVED ACK FROM 2")
