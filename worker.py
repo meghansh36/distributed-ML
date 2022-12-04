@@ -24,6 +24,7 @@ from ast import literal_eval
 from models import perform_inference, NpEncoder, Merge, dump_to_file, perform_inference_without_async, ModelParameters
 import json
 import fnmatch
+import statistics
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -56,19 +57,27 @@ class Worker:
         self.model_dict = {
             "InceptionV3": {
                 'hyperparams' : {
-                    'batch_size' : 40, 
-                    'time': ModelParameters(download_time=1, model_load_time=5.6, first_image_predict_time=2, each_image_predict_time=0.325, batch_size=40).execution_time_per_vm()
+                    'batch_size' : 10, 
+                    'time': ModelParameters(download_time=1, model_load_time=5.6, first_image_predict_time=2, each_image_predict_time=0.325, batch_size=10).execution_time_per_vm()
                     },
                 'queue': [],
-                'inprogress_queue': []
+                'inprogress_queue': [],
+                'measurements' : {
+                    'query_count': 0,
+                    'query_rate_list' : [],
+                }
             },
             "ResNet50": {
                 'hyperparams' : {
-                    'batch_size' : 5, 
-                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=5).execution_time_per_vm()
+                    'batch_size' : 20, 
+                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=20).execution_time_per_vm()
                     },
                 'queue': [],
-                'inprogress_queue': []
+                'inprogress_queue': [],
+                'measurements' : {
+                    'query_count': 0,
+                    'query_rate_list' : [],
+                }
             }
         }
     
@@ -476,7 +485,7 @@ class Worker:
             for event in waiting:
                 event.set()
     
-    async def handle_worker_task_request(self, curr_node, model, req_images, jobid, batchid):
+    async def handle_worker_task_request(self, curr_node, model, req_images, jobid, batchid, start_time):
         try:
             logging.info(f"received a Task from cordinator: JobId={jobid}, model={model}, images_count={len(req_images)}")
             # perform prediction
@@ -489,7 +498,7 @@ class Worker:
 
             # send response to cordinator
             logging.info(f"ACK for JOB#{jobid} to {curr_node.unique_name}")
-            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid, "batchid": batchid, "model": model}).pack())
+            await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid, "batchid": batchid, "model": model, 'image_count': len(req_images), 'start_time': start_time}).pack())
             # del self.job_task_dict[jobid]
             self.job_task = None
         except asyncio.CancelledError as e:
@@ -564,7 +573,6 @@ class Worker:
                     self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
                 
                 if H1.unique_name == self.leaderNode.unique_name:
-                    # print('sending files to H2')
                     await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES_RELAY, {"all_files": files_in_node, 'node': packet.sender, 'leader_files': self.file_service.current_files}).pack())
 
 
@@ -573,7 +581,6 @@ class Worker:
                 sender_node = packet.data['node']
                 leader_files = packet.data['leader_files']
 
-                # print('received files from H1', files_in_node)
                 self.temporary_file_dict[sender_node] = files_in_node
                 self.temporary_file_dict[H1.unique_name] = leader_files
 
@@ -918,8 +925,9 @@ class Worker:
                     batchid = packet.data['batchid']
                     model = packet.data['model']
                     req_images = packet.data['images']
+                    start_time = time()
 
-                    task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid, batchid))
+                    task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid, batchid, start_time))
                     self.job_task = task
 
 
@@ -929,6 +937,7 @@ class Worker:
                     jobid = packet.data['jobid']
                     batchid = packet.data['batchid']
                     model = packet.data['model']
+                    image_count = packet.data['image_counts']
 
                     if jobid in self.job_reqester_dict:
                         index = -1
@@ -942,6 +951,7 @@ class Worker:
                         if index != -1:
                             self.model_dict[model]["queue"].pop(index)
                         self.job_reqester_dict[jobid]["num_of_batches_pending"] -= 1
+                        self.model_dict[model]['measurements']['query_count'] += image_count
 
 
             
@@ -953,8 +963,13 @@ class Worker:
                     jobid = packet.data['jobid']
                     batchid = packet.data['batchid']
                     model = packet.data['model']
+                    image_count= packet.data['image_count']
+                    start_time = packet.data['start_time']
                     if jobid in self.job_reqester_dict:
                         
+                        self.model_dict[model]['measurements']['query_count'] += image_count
+                        self.model_dict[model]['measurements']['query_rate_list'].append((time(), time() - start_time, image_count))
+
                         index = -1
                         i = 0
                         for batch_dict in self.model_dict[model]["inprogress_queue"]:
@@ -974,7 +989,7 @@ class Worker:
                             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
 
                         if H1.unique_name == self.leaderNode.unique_name:
-                            await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_ACK_RELAY, {'jobid': jobid, 'batchid': batchid, 'model': model}).pack())
+                            await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_ACK_RELAY, {'jobid': jobid, 'batchid': batchid, 'model': model, 'image_counts': image_count}).pack())
 
                     # asyncio.create_task(self.schedule_job())
                     if self.leaderFlag:
@@ -1525,6 +1540,8 @@ class Worker:
             if self.config.testing:
                 print('9. print current bps.')
                 print('10. current false positive rate.')
+            print('MP4 commands:')
+            print(' C1: Query Rate (10sec) & Query Count [Per model]')
             print('commands:')
             print(' * put <localfilename> <sdfsfilename>')
             print(' * get <sdfsfilename> <localfilename>')
@@ -1610,7 +1627,69 @@ class Worker:
                     print('invalid option.')
                 cmd = options[0]
 
-                if cmd == "put": # PUT file
+                if cmd == "C1":
+                    print(f"Qeury Count:\n  InceptionV3:{self.model_dict['InceptionV3']['measurements']['query_count']}\n   ResNet50:{self.model_dict['ResNet50']['measurements']['query_count']}")
+
+                    inceptionv3_query_rate = []
+                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
+                    curr_time = 0
+                    if len(inceptionv3_query_rate_list):
+                        curr_time = inceptionv3_query_rate_list[-1][0]
+                    for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
+                        timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
+                        if curr_time - timestamp <= 10:
+                            inceptionv3_query_rate.append(image_count/execution_time)
+                        else:
+                            break
+                    
+                    resnet50_query_rate = []
+                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
+                    curr_time = 0
+                    if len(resnet50_query_rate_list):
+                        curr_time = resnet50_query_rate_list[-1][0]
+                    for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
+                        timestamp, execution_time, image_count = resnet50_query_rate_list[i]
+                        if curr_time - timestamp <= 10:
+                            resnet50_query_rate.append(image_count/execution_time)
+                        else:
+                            break
+                    
+                    inceptionv3_avg_query_rate = 0
+                    if len(inceptionv3_query_rate):
+                        inceptionv3_avg_query_rate = sum(inceptionv3_query_rate)/len(inceptionv3_query_rate)
+                    
+                    resnet50_avg_query_rate = 0
+                    if len(resnet50_query_rate):
+                        resnet50_avg_query_rate = sum(resnet50_query_rate)/len(resnet50_query_rate)
+                    
+                    print(f"Qeury Rate [10 sec]:\n  InceptionV3:{inceptionv3_avg_query_rate}\n   ResNet50:{resnet50_avg_query_rate}")
+                
+                elif cmd == "C2":
+
+                    inceptionv3_query_rate = []
+                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
+                    for i in range(len(inceptionv3_query_rate_list)):
+                        timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
+                        inceptionv3_query_rate.append(execution_time/image_count)
+                    
+                    inceptionv3_avg = statistics.mean(inceptionv3_query_rate)
+                    inceptionv3_std = statistics.stdev(inceptionv3_query_rate)
+                    inceptionv3_quantiles = statistics.quantiles(inceptionv3_query_rate, n=4)
+
+                    resnet50_query_rate = []
+                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
+                    for i in range(len(resnet50_query_rate_list)):
+                        timestamp, execution_time, image_count = resnet50_query_rate_list[i]
+                        resnet50_query_rate.append(execution_time/image_count)
+                    
+                    resnet50_avg = statistics.mean(resnet50_query_rate)
+                    resnet50_std = statistics.stdev(resnet50_query_rate)
+                    resnet50_quantiles = statistics.quantiles(resnet50_query_rate, n=4)
+
+                    print(f"Query Processing Time per model: \nInceptionV3:\nAverage={inceptionv3_avg}\nStandard Deviation={inceptionv3_std}\nPercentiles={inceptionv3_quantiles}")
+                    print(f"ResNet50:\nAverage={resnet50_avg}\nStandard Deviation={resnet50_std}\nPercentiles={resnet50_quantiles}")
+
+                elif cmd == "put": # PUT file
                     if len(options) != 3:
                         print('invalid options for put command.')
                         continue
