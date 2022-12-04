@@ -339,6 +339,117 @@ class Worker:
             
             logging.info(f"New nodes for resNet50={new_nodes_for_resnet50 + resnet50_running_jobs}, New nodes for inceptionV3={new_nodes_for_inceptionV3 + inceptionV3_running_jobs}")
 
+            nodes_for_resnet50 = new_nodes_for_resnet50
+            nodes_for_inceptionv3 = new_nodes_for_inceptionV3
+
+            model = 'ResNet50'
+            for worker in nodes_for_resnet50:
+
+                if len(self.model_dict[model]["queue"]) == 0:
+                    break
+                
+                single_batch_dict = self.model_dict[model]["queue"][0]
+
+                single_batch_jobid = single_batch_dict["job_id"]
+                single_batch_id = single_batch_dict["batch_id"]
+                images = single_batch_dict["images"]
+
+                if worker in self.workers_tasks_dict:
+
+                    # add the batch_dict to infront of the queue
+                    batch_dict = self.workers_tasks_dict[worker]
+                    batch_jobid = batch_dict['job_id']
+                    batch_id = batch_dict['batch_id']
+                    batch_dict_model = batch_dict["model"]
+
+                    i = 0
+                    for item in self.model_dict[batch_dict_model]['inprogress_queue']:
+                        item_jobid = item["job_id"]
+                        item_batchid = item["batch_id"]
+                        if item_jobid == batch_jobid and item_batchid == batch_id:
+                            break
+                        
+                        i+= 1
+
+                    logging.info(f'preempting job {batch_jobid} of {batch_dict_model} from {worker}')
+                    preempted_batch = self.model_dict[batch_dict_model]['inprogress_queue'].pop(i)
+                    self.model_dict[batch_dict_model]["queue"].insert(0, preempted_batch)
+
+                self.workers_tasks_dict[worker] = {
+                    'model': model,
+                    'job_id': single_batch_jobid,
+                    'batch_id': single_batch_id
+                }
+
+                self.model_dict[model]["inprogress_queue"].append(single_batch_dict)
+                self.model_dict[model]["queue"].pop(0)
+
+                result_dict = {}
+                for image in images:
+                    machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(image)
+                    result_dict[image] = machineids_with_filenames
+
+                # forward the request to VMs
+                workernode = Config.get_node_from_unique_name(worker)
+                logging.info(f'Assigning a new job {model} to {workernode.unique_name}')
+
+                await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
+                count += 1
+
+            model = 'InceptionV3'
+            for worker in nodes_for_inceptionv3:
+
+                if len(self.model_dict[model]["queue"]) == 0:
+                    break
+                
+                single_batch_dict = self.model_dict[model]["queue"][0]
+
+                single_batch_jobid = single_batch_dict["job_id"]
+                single_batch_id = single_batch_dict["batch_id"]
+                images = single_batch_dict["images"]
+
+                if worker in self.workers_tasks_dict:
+
+                    # add the batch_dict to infront of the queue
+                    batch_dict = self.workers_tasks_dict[worker]
+                    batch_jobid = batch_dict['job_id']
+                    batch_id = batch_dict['batch_id']
+                    batch_dict_model = batch_dict["model"]
+
+                    i = 0
+                    for item in self.model_dict[batch_dict_model]['inprogress_queue']:
+                        item_jobid = item["job_id"]
+                        item_batchid = item["batch_id"]
+                        if item_jobid == batch_jobid and item_batchid == batch_id:
+                            break
+                        
+                        i+= 1
+
+                    logging.info(f'preempting job {batch_jobid} of {batch_dict_model} from {worker}')
+                    preempted_batch = self.model_dict[batch_dict_model]['inprogress_queue'].pop(i)
+                    self.model_dict[batch_dict_model]["queue"].insert(0, preempted_batch)
+
+                self.workers_tasks_dict[worker] = {
+                    'model': model,
+                    'job_id': single_batch_jobid,
+                    'batch_id': single_batch_id
+                }
+
+                self.model_dict[model]["inprogress_queue"].append(single_batch_dict)
+                self.model_dict[model]["queue"].pop(0)
+
+                result_dict = {}
+                for image in images:
+                    machineids_with_filenames = self.leaderObj.get_machineids_with_filenames(image)
+                    result_dict[image] = machineids_with_filenames
+
+                # forward the request to VMs
+                workernode = Config.get_node_from_unique_name(worker)
+                logging.info(f'Assigning a new job {model} to {workernode.unique_name}')
+                await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
+                count += 1
+
+
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
         output = f"File {sdfsfilename} found in {len(machineids)} machines:\n"
