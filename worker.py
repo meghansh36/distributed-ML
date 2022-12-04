@@ -487,7 +487,7 @@ class Worker:
             await asyncio.sleep(0)
 
             # send response to cordinator
-            logging.info(f"ACK for JOB#{jobid}")
+            logging.info(f"ACK for JOB#{jobid} to {curr_node.unique_name}")
             await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid, "batchid": batchid, "model": model}).pack())
             # del self.job_task_dict[jobid]
             self.job_task = None
@@ -917,6 +917,7 @@ class Worker:
                     batchid = packet.data['batchid']
                     model = packet.data['model']
                     req_images = packet.data['images']
+
                     task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid, batchid))
                     self.job_task = task
 
@@ -944,6 +945,8 @@ class Worker:
 
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
+
+                print('i got a request ack from ', packet.sender)
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
                     jobid = packet.data['jobid']
