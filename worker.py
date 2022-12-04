@@ -23,6 +23,7 @@ import os
 from ast import literal_eval
 from models import perform_inference, NpEncoder, Merge, dump_to_file, perform_inference_without_async, ModelParameters
 import json
+import fnmatch
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -553,14 +554,20 @@ class Worker:
             
             elif packet.type == PacketType.ALL_LOCAL_FILES:
                 files_in_node = packet.data['all_files']
+               
                 if isinstance(self.leaderObj, Leader):
                     self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
-                await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES_RELAY, {"all_files": files_in_node, 'node': packet.sender}).pack())
+                
+                if H1.unique_name == self.leaderNode.unique_name:
+                    await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES_RELAY, {"all_files": files_in_node, 'node': packet.sender, 'leader_files': self.file_service.current_files}).pack())
+
 
             elif packet.type == PacketType.ALL_LOCAL_FILES_RELAY:
                 files_in_node = packet.data['all_files']
                 sender_node = packet.data['node']
+                leader_files = packet.data['leader_files']
                 self.temporary_file_dict[sender_node] = files_in_node
+                self.temporary_file_dict[H1.unique_name] = leader_files
 
             elif packet.type == PacketType.PING or packet.type == PacketType.INTRODUCE:
                 # print(f'{datetime.now()}: received ping from {host}:{port}')
@@ -862,7 +869,8 @@ class Worker:
                     images_count = packet.data['images_count']
                     self.job_count += 1
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
-                    await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_RELAY, {'model': model, 'images_count': images_count, 'request_node': curr_node.unique_name}).pack())
+                    if H1.unique_name == self.leaderNode.unique_name:
+                        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_RELAY, {'model': model, 'images_count': images_count, 'request_node': curr_node.unique_name}).pack())
                     await self.handle_job_request(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
             
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
@@ -954,7 +962,8 @@ class Worker:
                         if self.job_reqester_dict[jobid]["num_of_batches_pending"] == 0:
                             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
 
-                        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_ACK_RELAY, {'jobid': jobid, 'batchid': batchid, 'model': model}).pack())
+                        if H1.unique_name == self.leaderNode.unique_name:
+                            await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_ACK_RELAY, {'jobid': jobid, 'batchid': batchid, 'model': model}).pack())
 
                     # asyncio.create_task(self.schedule_job())
                     if self.leaderFlag:
