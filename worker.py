@@ -24,6 +24,7 @@ from ast import literal_eval
 from models import perform_inference, NpEncoder, Merge, dump_to_file, perform_inference_without_async, ModelParameters
 import json
 import fnmatch
+import statistics
 
 class Worker:
     """Main worker class to handle all the failure detection and sends PINGs and ACKs to other nodes"""
@@ -1662,6 +1663,31 @@ class Worker:
                         resnet50_avg_query_rate = sum(resnet50_query_rate)/len(resnet50_query_rate)
                     
                     print(f"Qeury Rate [10 sec]:\n  InceptionV3:{inceptionv3_avg_query_rate}\n   ResNet50:{resnet50_avg_query_rate}")
+                
+                elif cmd == "C2":
+
+                    inceptionv3_query_rate = []
+                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
+                    for i in range(len(inceptionv3_query_rate_list)):
+                        timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
+                        inceptionv3_query_rate.append(execution_time/image_count)
+                    
+                    inceptionv3_avg = statistics.mean(inceptionv3_query_rate)
+                    inceptionv3_std = statistics.stdev(inceptionv3_query_rate)
+                    inceptionv3_quantiles = statistics.quantiles(inceptionv3_query_rate, n=4)
+
+                    resnet50_query_rate = []
+                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
+                    for i in range(len(resnet50_query_rate_list)):
+                        timestamp, execution_time, image_count = resnet50_query_rate_list[i]
+                        resnet50_query_rate.append(execution_time/image_count)
+                    
+                    resnet50_avg = statistics.mean(resnet50_query_rate)
+                    resnet50_std = statistics.stdev(resnet50_query_rate)
+                    resnet50_quantiles = statistics.quantiles(resnet50_query_rate, n=4)
+
+                    print(f"Query Processing Time per model: \nInceptionV3:\nAverage={inceptionv3_avg}\nStandard Deviation={inceptionv3_std}\nPercentiles={inceptionv3_quantiles}")
+                    print(f"ResNet50:\nAverage={resnet50_avg}\nStandard Deviation={resnet50_std}\nPercentiles={resnet50_quantiles}")
 
                 elif cmd == "put": # PUT file
                     if len(options) != 3:
