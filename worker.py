@@ -394,7 +394,6 @@ class Worker:
                 logging.info(f'Assigning a new job {model} to {workernode.unique_name}')
 
                 await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
-                count += 1
 
             model = 'InceptionV3'
             for worker in nodes_for_inceptionv3:
@@ -447,7 +446,6 @@ class Worker:
                 workernode = Config.get_node_from_unique_name(worker)
                 logging.info(f'Assigning a new job {model} to {workernode.unique_name}')
                 await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
-                count += 1
 
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
