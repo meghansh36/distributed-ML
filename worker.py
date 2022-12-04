@@ -572,7 +572,6 @@ class Worker:
                     self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
                 
                 if H1.unique_name == self.leaderNode.unique_name:
-                    print('sending files to H2')
                     await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES_RELAY, {"all_files": files_in_node, 'node': packet.sender, 'leader_files': self.file_service.current_files}).pack())
 
 
@@ -581,7 +580,6 @@ class Worker:
                 sender_node = packet.data['node']
                 leader_files = packet.data['leader_files']
 
-                print('received files from H1', files_in_node)
                 self.temporary_file_dict[sender_node] = files_in_node
                 self.temporary_file_dict[H1.unique_name] = leader_files
 
@@ -1635,7 +1633,7 @@ class Worker:
 
                     inceptionv3_query_rate = []
                     inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
-                    for i in range(len(inceptionv3_query_rate_list), -1, -1):
+                    for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
                         timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
                         if curr_time - timestamp <= 10:
                             inceptionv3_query_rate.append(image_count/execution_time)
@@ -1644,7 +1642,7 @@ class Worker:
                     
                     resnet50_query_rate = []
                     resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
-                    for i in range(len(resnet50_query_rate_list), -1, -1):
+                    for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
                         timestamp, execution_time, image_count = resnet50_query_rate_list[i]
                         if curr_time - timestamp <= 10:
                             resnet50_query_rate.append(image_count/execution_time)
