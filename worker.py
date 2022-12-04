@@ -273,8 +273,9 @@ class Worker:
                 count += 1
             
             logging.info(f"scheduling {count} tasks for {model}")
+
         
-        else:
+        elif len(self.model_dict["InceptionV3"]["queue"]) != 0 and len(self.model_dict["ResNet50"]["queue"]) != 0:
 
             online_worker_node_count = len(set(list(self.membership_list.memberShipListDict.keys())) - {H1.unique_name, H2.unique_name})
             temp = 1
