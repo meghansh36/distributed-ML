@@ -560,7 +560,7 @@ class Worker:
             elif packet.type == PacketType.ELECTION:
                 """Instructions to execute when node receives the election packet. If it has not started its own election then its starts it. If election is already going on, it checks if it itself is the leader using the full membership list. If new leader, then send the coordinate message"""
 
-                logging(f'{self.config.node.unique_name}  GOT AN ELECTION PACKET')
+                logging.info(f'{self.config.node.unique_name}  GOT AN ELECTION PACKET')
                 if not self.globalObj.election.electionPhase:
                     self.globalObj.election.initiate_election()
                 else:
@@ -834,7 +834,7 @@ class Worker:
 
 
 
-            
+
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
