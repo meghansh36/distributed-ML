@@ -1371,7 +1371,9 @@ class Worker:
             timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
             inceptionv3_query_rate.append(execution_time/image_count)
         
-        inceptionv3_avg = statistics.mean(inceptionv3_query_rate)
+        inceptionv3_avg = 0
+        if len(inceptionv3_query_rate):
+            inceptionv3_avg = statistics.mean(inceptionv3_query_rate)
         inceptionv3_std = statistics.stdev(inceptionv3_query_rate)
         inceptionv3_quantiles = statistics.quantiles(inceptionv3_query_rate, n=4)
 
@@ -1381,7 +1383,9 @@ class Worker:
             timestamp, execution_time, image_count = resnet50_query_rate_list[i]
             resnet50_query_rate.append(execution_time/image_count)
         
-        resnet50_avg = statistics.mean(resnet50_query_rate)
+        resnet_avg = 0
+        if len(resnet_avg):
+            resnet50_avg = statistics.mean(resnet50_query_rate)
         resnet50_std = statistics.stdev(resnet50_query_rate)
         resnet50_quantiles = statistics.quantiles(resnet50_query_rate, n=4)
 
