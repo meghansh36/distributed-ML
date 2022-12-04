@@ -42,7 +42,7 @@ class Worker:
         self._waiting_for_second_leader_event: Optional[Event] = None
         self.get_file_sdfsfilename = None
         self.get_file_machineids_with_file_versions = None
-        self.job_count = 10
+        self.job_count = 20
         self.current_job_id = 0
         self.job_reqester_dict = {}
         self.job_task = None
