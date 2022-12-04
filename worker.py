@@ -167,6 +167,7 @@ class Worker:
             sdfs_images = await self.ls_all_cli("*.jpeg")
         else:
             sdfs_images = self.ls_all_temp_dict("*.jpeg")
+            print(sdfs_images)
         self.preprocess_job_request(req_node, model, number_of_images, job_id, sdfs_images)
         if self.leaderFlag:
             await self.schedule_job()
