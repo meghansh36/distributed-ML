@@ -1128,6 +1128,31 @@ class Worker:
             self.leaderObj.delete_node_from_global_dict(node)
             await self.replace_files_downloading_by_node(node)
 
+            if node in self.workers_tasks_dict:
+
+                # add the batch_dict to infront of the queue
+                batch_dict = self.workers_tasks_dict[node]
+                batch_jobid = batch_dict['job_id']
+                batch_id = batch_dict['batch_id']
+                batch_dict_model = batch_dict["model"]
+
+                i = 0
+                for item in self.model_dict[batch_dict_model]['inprogress_queue']:
+                    item_jobid = item["job_id"]
+                    item_batchid = item["batch_id"]
+                    if item_jobid == batch_jobid and item_batchid == batch_id:
+                        break
+                    
+                    i+= 1
+
+                logging.info(f'JOB#{batch_jobid} BATCH#{batch_id} DIED!!!')
+                preempted_batch = self.model_dict[batch_dict_model]['inprogress_queue'].pop(i)
+                self.model_dict[batch_dict_model]["queue"].insert(0, preempted_batch)
+
+                del self.workers_tasks_dict[node]
+
+                await self.schedule_job()
+
     async def replicate_files(self):
         """Function to replicate the files once 3 failures are detected"""
         if self.leaderFlag:
