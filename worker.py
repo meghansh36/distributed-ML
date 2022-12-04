@@ -164,8 +164,8 @@ class Worker:
     async def handle_job_request(self, req_node, model, number_of_images, job_id):
 
         await self.preprocess_job_request(req_node, model, number_of_images, job_id)
-
-        await self.schedule_job()
+        if self.leaderFlag:
+            await self.schedule_job()
 
     async def preprocess_job_request(self, req_node, model, number_of_images, job_id):
 
@@ -821,7 +821,17 @@ class Worker:
             
 
 
+            elif packet.type == PacketType.SUBMIT_JOB_RELAY:
 
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    model = packet.data['model']
+                    images_count = packet.data['images_count']
+                    request_node = packet.data['request_node']
+
+                    self.job_count += 1
+                    # await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
+                    await self.handle_job_request(Config.get_node_from_unique_name(request_node), model=model, number_of_images=images_count, job_id=self.job_count)
 
 
 
@@ -842,6 +852,7 @@ class Worker:
                     images_count = packet.data['images_count']
                     self.job_count += 1
                     await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_ACK, {'jobid': self.job_count}).pack())
+                    await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_RELAY, {'model': model, 'images_count': images_count, 'request_node': curr_node.unique_name}).pack())
                     await self.handle_job_request(curr_node, model=model, number_of_images=images_count, job_id=self.job_count)
             
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST_ACK:
@@ -883,11 +894,33 @@ class Worker:
                     req_images = packet.data['images']
                     task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid, batchid))
                     self.job_task = task
+
+
+            elif packet.type == PacketType.WORKER_TASK_ACK_RELAY:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    jobid = packet.data['jobid']
+                    batchid = packet.data['batchid']
+                    model = packet.data['model']
+
+                    if jobid in self.job_reqester_dict:
+                        index = -1
+                        i = 0
+                        for batch_dict in self.model_dict[model]["queue"]:
+                            if batch_dict["job_id"] == jobid and batch_dict["batch_id"] == batchid:
+                                index = i
+                                break
+                            i += 1
+
+                        if index != -1:
+                            self.model_dict[model]["queue"].pop(index)
+                        self.job_reqester_dict[jobid]["num_of_batches_pending"] -= 1
+
+
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
-                    print("RECEIVED ACK FROM 2")
                     jobid = packet.data['jobid']
                     batchid = packet.data['batchid']
                     model = packet.data['model']
@@ -911,8 +944,11 @@ class Worker:
                         if self.job_reqester_dict[jobid]["num_of_batches_pending"] == 0:
                             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST_SUCCESS, {'jobid': jobid}).pack())
 
+                        await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_ACK_RELAY, {'jobid': jobid, 'batchid': batchid, 'model': model}).pack())
+
                     # asyncio.create_task(self.schedule_job())
-                    await self.schedule_job()
+                    if self.leaderFlag:
+                        await self.schedule_job()
                 
             # elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
             #     curr_node: Node = Config.get_node_from_unique_name(packet.sender)
