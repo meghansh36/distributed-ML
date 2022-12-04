@@ -24,12 +24,13 @@ class FileService:
         files = os.listdir(SDFS_LOCATION)
         files.sort(reverse=True)
         for filename in files:
-            pos = filename.rfind("_")
-            fullname = filename[:pos]
-            if fullname in self.current_files:
-                self.current_files[fullname].insert(0, filename)
-            else:
-                self.current_files[fullname] = [filename]
+            if not filename.startswith('output_'):
+                pos = filename.rfind("_")
+                fullname = filename[:pos]
+                if fullname in self.current_files:
+                    self.current_files[fullname].insert(0, filename)
+                else:
+                    self.current_files[fullname] = [filename]
 
     def list_all_files(self):
         files = "filename: [versions]\n"
