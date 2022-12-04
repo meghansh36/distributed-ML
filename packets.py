@@ -54,6 +54,7 @@ class PacketType(str, Enum):
     WORKER_KILL_TASK_REQUEST_ACK = '101011'
     SUBMIT_JOB_RELAY = "101100"
     WORKER_TASK_ACK_RELAY = "101101"
+    ALL_LOCAL_FILES_RELAY = "101110"
     
 
 class Packet:

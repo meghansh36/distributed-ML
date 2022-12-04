@@ -162,16 +162,18 @@ class Worker:
             await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.GET_FILE_ACK, response).pack())
     
     async def handle_job_request(self, req_node, model, number_of_images, job_id):
-
-        await self.preprocess_job_request(req_node, model, number_of_images, job_id)
+        if self.leaderFlag: 
+            sdfs_images = await self.ls_all_cli("*.jpeg")
+        else:
+            sdfs_images = self.ls_all_temp_dict("*.jpeg")
+        self.preprocess_job_request(req_node, model, number_of_images, job_id, sdfs_images)
         if self.leaderFlag:
             await self.schedule_job()
 
-    async def preprocess_job_request(self, req_node, model, number_of_images, job_id):
+    def preprocess_job_request(self, req_node, model, number_of_images, job_id, sdfs_images):
 
         logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
 
-        sdfs_images = await self.ls_all_cli("*.jpeg")
         images = random.sample(sdfs_images, number_of_images)
 
         # batch images
@@ -538,6 +540,8 @@ class Worker:
                     self.leaderObj.global_file_dict[self.config.node.unique_name] = self.file_service.current_files
                     self.temporary_file_dict = {}
                     logging.info(f"I BECAME THE LEADER {self.leaderNode.unique_name}")
+                    if H2.unique_name == self.config.node.unique_name:
+                        await self.schedule_job()
                 else:
                     self.leaderNode = Config.get_node_from_unique_name(introducer)
                     logging.info(f"MY NEW LEADER IS {self.leaderNode.unique_name}")
@@ -551,6 +555,12 @@ class Worker:
                 files_in_node = packet.data['all_files']
                 if isinstance(self.leaderObj, Leader):
                     self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
+                await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES_RELAY, {"all_files": files_in_node, 'node': packet.sender}).pack())
+
+            elif packet.type == PacketType.ALL_LOCAL_FILES_RELAY:
+                files_in_node = packet.data['all_files']
+                sender_node = packet.data['node']
+                self.temporary_file_dict[sender_node] = files_in_node
 
             elif packet.type == PacketType.PING or packet.type == PacketType.INTRODUCE:
                 # print(f'{datetime.now()}: received ping from {host}:{port}')
@@ -1396,6 +1406,21 @@ class Worker:
         else:
             matched_files = await self.get_all_files(file_pattern)
         return matched_files
+
+    def ls_all_temp_dict(self, file_pattern):
+        matched_files = []
+        matched_files = self.get_all_matching_files_from_temp_dict(file_pattern)
+        return matched_files
+
+    def get_all_matching_files_from_temp_dict(self, pattern):
+
+        matching_files = set()
+        for _, machine_file_dict in self.temporary_file_dict.items():
+            for sdfsFileName, _ in machine_file_dict.items():
+                if fnmatch.fnmatch(sdfsFileName, pattern):
+                    matching_files.add(sdfsFileName)
+        return list(matching_files)
+
     
     async def predict_locally_cli(self, model, p_images, job_id, batch_id=0):
         
