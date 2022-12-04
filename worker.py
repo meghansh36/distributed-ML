@@ -819,6 +819,22 @@ class Worker:
                 if self._waiting_for_leader_event is not None:
                     self._waiting_for_leader_event.set()
             
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
             elif packet.type == PacketType.SUBMIT_JOB_REQUEST:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:

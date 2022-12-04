@@ -39,7 +39,7 @@ class MemberShipList:
             if self.globalObj.worker.leaderNode != None:
                 print(key_for_cleanup, self.globalObj.worker.leaderNode.unique_name)
                 if key_for_cleanup == self.globalObj.worker.leaderNode.unique_name and not self.globalObj.election.electionPhase:
-                    logging.error('I should start the election')
+                    # logging.error('I should start the election')
                     self.globalObj.election.initiate_election()
 
             del self.memberShipListDict[key_for_cleanup]
