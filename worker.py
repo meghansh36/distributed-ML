@@ -45,7 +45,7 @@ class Worker:
         self.job_count = 10
         self.current_job_id = 0
         self.job_reqester_dict = {}
-        self.job_task_dict = {}
+        self.job_task = None
 
         self.worker_nodes = [H3.unique_name, H4.unique_name, H5.unique_name, H6.unique_name, H7.unique_name, H8.unique_name, H9.unique_name, H10.unique_name]
 
@@ -213,12 +213,12 @@ class Worker:
             "num_of_batches_pending": len(all_batches)
         }
     
-    def get_count_of_running_nodes(self, model):
-        count = 0
+    def get_running_nodes(self, model):
+        result = []
         for worker in self.workers_tasks_dict:
             if(self.workers_tasks_dict[worker]['model'] == model):
-                count+=1
-        return count
+                result.append(worker)
+        return result
 
 
     async def schedule_job(self):
@@ -229,7 +229,7 @@ class Worker:
             if len(self.model_dict["InceptionV3"]["queue"]) == 0 and len(self.model_dict["ResNet50"]["queue"]) != 0:
                 model = "ResNet50"
             
-            free_workers = list(set(self.worker_nodes) - set(list(self.workers_tasks_dict.keys())))
+            free_workers = list(set(list(self.membership_list.memberShipListDict.keys())).intersection(set(self.worker_nodes)) - set(list(self.workers_tasks_dict.keys())))
 
             if len(free_workers) == 0:
                 logging.info(f"All the workers are busy will schedule if any worker becomes available")
@@ -279,21 +279,65 @@ class Worker:
                 temp+=1
             
             differences = []
-
             for split in split_job_array:
                 inception_vmcount, resnet_vmcount = split
                 inception_query_rate = (inception_vmcount * self.model_dict['InceptionV3']['hyperparams']['batch_size']) / self.model_dict['InceptionV3']['hyperparams']['time']
                 resnet50_query_rate = (resnet_vmcount * self.model_dict['ResNet50']['hyperparams']['batch_size']) / self.model_dict['ResNet50']['hyperparams']['time']
 
-                difference = (abs( inception_query_rate - resnet50_query_rate ) / max(inception_query_rate, resnet50_query_rate)) * 100
+                difference = (abs(inception_query_rate - resnet50_query_rate) / max(inception_query_rate, resnet50_query_rate)) * 100
                 differences.append(difference)
 
-
             min_index = differences.index(min(differences))
+            inception_vmcount_predicted, resnet_vmcount_predicted = split_job_array[min_index]
+            logging.info(f"predicted query_differences: {differences}, final split: {split_job_array[min_index]}")
 
-            inception_vmcount, resnet_vmcount = split_job_array[min_index]
+            inceptionV3_running_jobs = self.get_running_nodes('InceptionV3')
+            resnet50_running_jobs = self.get_running_nodes('ResNet50')
+            free_workers = list(set(list(self.membership_list.memberShipListDict.keys())).intersection(set(self.worker_nodes)) - set(list(self.workers_tasks_dict.keys())))
 
-            print(f"possible query_differences: {differences}, final split: {split_job_array[min_index]}")
+            new_nodes_for_inceptionV3 = []
+            if len(inceptionV3_running_jobs) < inception_vmcount_predicted:
+                
+                while len(free_workers) > 0:
+                    free_worker = free_workers[-1]
+                    if len(new_nodes_for_inceptionV3) + len(inceptionV3_running_jobs) < inception_vmcount_predicted:
+                        new_nodes_for_inceptionV3.append(free_worker)
+                    else:
+                        break
+                    free_workers.pop()
+                
+                if len(new_nodes_for_inceptionV3) + len(inceptionV3_running_jobs) < inception_vmcount_predicted:
+                    # assign that from resNet VMs
+                    while len(resnet50_running_jobs) > 0:
+                        free_worker = resnet50_running_jobs[-1]
+                        if len(new_nodes_for_inceptionV3) + len(inceptionV3_running_jobs) < inception_vmcount_predicted:
+                            new_nodes_for_inceptionV3.append(free_worker)
+                        else:
+                            break
+                        resnet50_running_jobs.pop()
+            
+            new_nodes_for_resnet50 = []
+            if len(resnet50_running_jobs) < resnet_vmcount_predicted:
+                
+                while len(free_workers) > 0:
+                    free_worker = free_workers[-1]
+                    if len(new_nodes_for_resnet50) + len(resnet50_running_jobs) < resnet_vmcount_predicted:
+                        new_nodes_for_resnet50.append(free_worker)
+                    else:
+                        break
+                    free_workers.pop()
+                
+                if len(new_nodes_for_resnet50) + len(resnet50_running_jobs) < resnet_vmcount_predicted:
+                    # assign that from inceptionV3 VMs
+                    while len(inceptionV3_running_jobs) > 0:
+                        free_worker = inceptionV3_running_jobs[-1]
+                        if len(new_nodes_for_resnet50) + len(resnet50_running_jobs) < resnet_vmcount_predicted:
+                            new_nodes_for_resnet50.append(free_worker)
+                        else:
+                            break
+                        inceptionV3_running_jobs.pop()
+            
+            logging.info(f"New nodes for resNet50={new_nodes_for_resnet50}, New nodes for inceptionV3={new_nodes_for_inceptionV3}")
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -331,6 +375,7 @@ class Worker:
             logging.info(f"ACK for JOB#{jobid}")
             await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST_ACK, {'jobid': jobid, "batchid": batchid, "model": model}).pack())
             # del self.job_task_dict[jobid]
+            self.job_task = None
         except asyncio.CancelledError as e:
             logging.info(f"Stopping the JOB#{jobid}")
         finally:
@@ -695,12 +740,24 @@ class Worker:
             elif packet.type == PacketType.WORKER_TASK_REQUEST:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
+
+                    if self.job_task is not None:
+                        # cancel the task
+                        self.job_task.cancel()
+                        # Wait for the cancellation of task to be complete
+                        try:
+                            await self.job_task
+                        except asyncio.CancelledError:
+                            print("cancelled now")
+                        
+                        self.job_task = None
+                    
                     jobid = packet.data['jobid']
                     batchid = packet.data['batchid']
                     model = packet.data['model']
                     req_images = packet.data['images']
                     task = asyncio.create_task(self.handle_worker_task_request(curr_node, model, req_images, jobid, batchid))
-                    self.job_task_dict[jobid] = task
+                    self.job_task = task
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
@@ -732,26 +789,26 @@ class Worker:
                     # asyncio.create_task(self.schedule_job())
                     await self.schedule_job()
                 
-            elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
-                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
-                if curr_node:
-                    jobid = packet.data['jobid']
-                    if jobid in self.job_task_dict:
-                        task = self.job_task_dict[jobid]
-                        task.cancel()
-                        # Wait for the cancellation of task to be complete
-                        try:
-                            await task
-                        except asyncio.CancelledError:
-                            print("cancelled now")
-                        del self.job_task_dict[jobid]
-                    await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_KILL_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
+            # elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
+            #     curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+            #     if curr_node:
+            #         jobid = packet.data['jobid']
+            #         if jobid in self.job_task_dict:
+            #             task = self.job_task_dict[jobid]
+            #             task.cancel()
+            #             # Wait for the cancellation of task to be complete
+            #             try:
+            #                 await task
+            #             except asyncio.CancelledError:
+            #                 print("cancelled now")
+            #             del self.job_task_dict[jobid]
+            #         await self.io.send(req_node.host, req_node.port, Packet(self.config.node.unique_name, PacketType.WORKER_KILL_TASK_REQUEST_ACK, {'jobid': jobid}).pack())
             
-            elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST_ACK:
-                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
-                if curr_node:
-                    jobid = packet.data['jobid']
-                    logging.info(f"{curr_node.unique_name} killed its JOB#{jobid}")
+            # elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST_ACK:
+            #     curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+            #     if curr_node:
+            #         jobid = packet.data['jobid']
+            #         logging.info(f"{curr_node.unique_name} killed its JOB#{jobid}")
 
     async def _wait(self, node: Node, timeout: float) -> bool:
         """Function to wait for ACKs after PINGs"""
@@ -1515,33 +1572,33 @@ class Worker:
                     # del self._waiting_for_second_leader_event
                     # self._waiting_for_second_leader_event = None
                 
-                elif cmd == "kill-job":
+                # elif cmd == "kill-job":
 
-                    if len(options) != 2:
-                        print('invalid options for kill-job command.')
-                        continue
+                #     if len(options) != 2:
+                #         print('invalid options for kill-job command.')
+                #         continue
                     
-                    jobid = 0
-                    try:
-                        jobid = literal_eval(options[1])
-                        if not isinstance(jobid, int):
-                            print('invalid jobid provided')
-                            continue
-                    except:
-                        print('invalid jobid provided')
-                        continue
+                #     jobid = 0
+                #     try:
+                #         jobid = literal_eval(options[1])
+                #         if not isinstance(jobid, int):
+                #             print('invalid jobid provided')
+                #             continue
+                #     except:
+                #         print('invalid jobid provided')
+                #         continue
 
-                    if jobid in self.job_task_dict:
+                #     # if jobid in self.job_task_dict:
 
-                        task = self.job_task_dict[jobid]
+                #     #     task = self.job_task_dict[jobid]
 
-                        task.cancel()
+                #     #     task.cancel()
 
-                        # Wait for the cancellation of task to be complete
-                        try:
-                            await task
-                        except asyncio.CancelledError:
-                            print("main(): cancel_me is cancelled now")
+                #     #     # Wait for the cancellation of task to be complete
+                #     #     try:
+                #     #         await task
+                #     #     except asyncio.CancelledError:
+                #     #         print("main(): cancel_me is cancelled now")
 
                 else:
                     print('invalid option.')
