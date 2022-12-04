@@ -871,7 +871,7 @@ class Worker:
 
 
 
-
+            
 
 
 
@@ -995,7 +995,41 @@ class Worker:
                     if self.leaderFlag:
                         print('calling schedule from WORKER_TASK_REQUEST_ACK')
                         await self.schedule_job()
-                
+
+            elif packet.type == PacketType.SET_BATCH_SIZE:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    model = packet.data['model']
+                    batch_size = packet.data['batch_size']
+                    
+                    self.model_dict[model]['hyperparams']['batch_size'] = batch_size
+                    self.model_dict[model]['hyperparams']['time'] = ModelParameters(download_time=1, model_load_time=5.6, first_image_predict_time=2, each_image_predict_time=0.325, batch_size=batch_size).execution_time_per_vm()
+
+                    print('set hyperparameters')
+
+            elif packet.type == PacketType.GET_C2_COMMAND:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles = self.calculate_c2_command_params()
+
+                    await self.io.send(curr_node.host, curr_node.port, Packet(self.config.node.unique_name, PacketType.GET_C2_COMMAND_ACK, {'inceptionv3_avg': inceptionv3_avg, 'inceptionv3_std': inceptionv3_std, 'inceptionv3_quantiles': inceptionv3_quantiles, 'resnet50_avg': resnet50_avg, 'resnet50_std': resnet50_std, 'resnet50_quantiles': resnet50_quantiles}).pack())
+
+            elif packet.type == PacketType.GET_C2_COMMAND_ACK:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
+                if curr_node:
+                    inceptionv3_avg = packet.data['inceptionv3_avg']
+                    inceptionv3_std = packet.data['inceptionv3_std']
+                    inceptionv3_quantiles = packet.data['inceptionv3_quantiles']
+                    resnet50_avg = packet.data['resnet50_avg']
+                    resnet50_std = packet.data['resnet50_std']
+                    resnet50_quantiles = packet.data['resnet50_quantiles']
+                    
+                    self.print_c2_command(inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles)
+                    
+                    if self._waiting_for_leader_event is not None:
+                        self._waiting_for_leader_event.set()
+
+
             # elif packet.type == PacketType.WORKER_KILL_TASK_REQUEST:
             #     curr_node: Node = Config.get_node_from_unique_name(packet.sender)
             #     if curr_node:
@@ -1167,6 +1201,14 @@ class Worker:
         await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.SUBMIT_JOB_REQUEST, {'model': model, 'images_count': num_of_images}).pack())
         await self._wait_for_leader(20)
 
+    async def send_c2_command_to_leader(self):
+        await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.GET_C2_COMMAND, {}).pack())
+        await self._wait_for_leader(20)
+
+    async def send_batch_size_command_to_leader(self, model, batch_size):
+
+        await self.io.send(self.leaderNode.host, self.leaderNode.port, Packet(self.config.node.unique_name, PacketType.SET_BATCH_SIZE, {'model': model, 'batch_size': batch_size}).pack())
+
     def isCurrentNodeLeader(self):
         """Function to check if this node is the leader"""
         if self.leaderObj is not None and self.config.node.unique_name == self.leaderNode.unique_name:
@@ -1315,6 +1357,35 @@ class Worker:
         logging.info(f"{model} Inference on {len(images_full_path)} downloaded images took {time() - start_time1} sec: Total runtime of task: {time() - start_time} sec")
 
         return results
+
+    
+
+    def print_c2_command(self, inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles):
+        print(f"Query Processing Time per model: \nInceptionV3:\nAverage={inceptionv3_avg}\nStandard Deviation={inceptionv3_std}\nPercentiles={inceptionv3_quantiles}")
+        print(f"ResNet50:\nAverage={resnet50_avg}\nStandard Deviation={resnet50_std}\nPercentiles={resnet50_quantiles}")
+
+    def calculate_c2_command_params(self):
+        inceptionv3_query_rate = []
+        inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
+        for i in range(len(inceptionv3_query_rate_list)):
+            timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
+            inceptionv3_query_rate.append(execution_time/image_count)
+        
+        inceptionv3_avg = statistics.mean(inceptionv3_query_rate)
+        inceptionv3_std = statistics.stdev(inceptionv3_query_rate)
+        inceptionv3_quantiles = statistics.quantiles(inceptionv3_query_rate, n=4)
+
+        resnet50_query_rate = []
+        resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
+        for i in range(len(resnet50_query_rate_list)):
+            timestamp, execution_time, image_count = resnet50_query_rate_list[i]
+            resnet50_query_rate.append(execution_time/image_count)
+        
+        resnet50_avg = statistics.mean(resnet50_query_rate)
+        resnet50_std = statistics.stdev(resnet50_query_rate)
+        resnet50_quantiles = statistics.quantiles(resnet50_query_rate, n=4)
+
+        return (inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles)
         
     def run_inference_without_async(self, model, images):
 
@@ -1665,29 +1736,22 @@ class Worker:
                     print(f"Qeury Rate [10 sec]:\n  InceptionV3:{inceptionv3_avg_query_rate}\n   ResNet50:{resnet50_avg_query_rate}")
                 
                 elif cmd == "C2":
-
-                    inceptionv3_query_rate = []
-                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
-                    for i in range(len(inceptionv3_query_rate_list)):
-                        timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
-                        inceptionv3_query_rate.append(execution_time/image_count)
                     
-                    inceptionv3_avg = statistics.mean(inceptionv3_query_rate)
-                    inceptionv3_std = statistics.stdev(inceptionv3_query_rate)
-                    inceptionv3_quantiles = statistics.quantiles(inceptionv3_query_rate, n=4)
+                    if self.isCurrentNodeLeader():
 
-                    resnet50_query_rate = []
-                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
-                    for i in range(len(resnet50_query_rate_list)):
-                        timestamp, execution_time, image_count = resnet50_query_rate_list[i]
-                        resnet50_query_rate.append(execution_time/image_count)
-                    
-                    resnet50_avg = statistics.mean(resnet50_query_rate)
-                    resnet50_std = statistics.stdev(resnet50_query_rate)
-                    resnet50_quantiles = statistics.quantiles(resnet50_query_rate, n=4)
+                        inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles = self.calculate_c2_command_params()
+                        self.print_c2_command(inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles)
 
-                    print(f"Query Processing Time per model: \nInceptionV3:\nAverage={inceptionv3_avg}\nStandard Deviation={inceptionv3_std}\nPercentiles={inceptionv3_quantiles}")
-                    print(f"ResNet50:\nAverage={resnet50_avg}\nStandard Deviation={resnet50_std}\nPercentiles={resnet50_quantiles}")
+                    else:
+                        self.send_c2_command_to_leader()
+
+                elif cmd == "C3":
+                    # set batch size
+
+                    model = options[1]
+                    batch_size = options[2]
+
+                    await self.send_batch_size_command_to_leader(model, batch_size)
 
                 elif cmd == "put": # PUT file
                     if len(options) != 3:

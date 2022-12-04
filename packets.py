@@ -55,7 +55,9 @@ class PacketType(str, Enum):
     SUBMIT_JOB_RELAY = "101100"
     WORKER_TASK_ACK_RELAY = "101101"
     ALL_LOCAL_FILES_RELAY = "101110"
-    
+    SET_BATCH_SIZE = '101111'
+    GET_C2_COMMAND = '110000'
+    GET_C2_COMMAND_ACK = "110001"
 
 class Packet:
     """Custom packet type for failure detector"""
