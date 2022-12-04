@@ -18,8 +18,8 @@ class Election:
         self.electionPhase = True
         self.globalObj.worker.leaderNode = None
         logging.info(f'ELECTION INITIATED by {self.globalObj.worker.config.node.unique_name}')
-        while self.electionPhase:
-            asyncio.gather(self.globalObj.worker.send_election_messages())
+        # while self.electionPhase:
+        #     asyncio.gather(self.globalObj.worker.send_election_messages())
     
     def check_if_leader(self):
         """Function to check if the current node has the highest ID"""
