@@ -292,8 +292,11 @@ class Worker:
             logging.info(f"predicted query_differences: {differences}, final split: {split_job_array[min_index]}")
 
             inceptionV3_running_jobs = self.get_running_nodes('InceptionV3')
-            resnet50_running_jobs = self.get_running_nodes('ResNet50')
+            resnet50_running_jobs = self.get_running_nodes('InceptionV3')
             free_workers = list(set(list(self.membership_list.memberShipListDict.keys())).intersection(set(self.worker_nodes)) - set(list(self.workers_tasks_dict.keys())))
+
+            prev_nodes_for_inceptionV3 = self.get_running_nodes('InceptionV3')
+            prev_nodes_for_resNet50 = self.get_running_nodes('InceptionV3')
 
             new_nodes_for_inceptionV3 = []
             if len(inceptionV3_running_jobs) < inception_vmcount_predicted:
@@ -337,7 +340,11 @@ class Worker:
                             break
                         inceptionV3_running_jobs.pop()
             
-            logging.info(f"New nodes for resNet50={new_nodes_for_resnet50},{resnet50_running_jobs}, New nodes for inceptionV3={new_nodes_for_inceptionV3},{inceptionV3_running_jobs}")
+            new_nodes_for_resnet50.extend(resnet50_running_jobs)
+            new_nodes_for_inceptionV3.extend(inceptionV3_running_jobs)
+            
+            logging.info(f"RESNET50={prev_nodes_for_resNet50}->{new_nodes_for_resnet50}")
+            logging.info(f"INCEPTIONV3={prev_nodes_for_inceptionV3}->{new_nodes_for_inceptionV3}")
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
