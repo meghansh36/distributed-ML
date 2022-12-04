@@ -337,7 +337,7 @@ class Worker:
                             break
                         inceptionV3_running_jobs.pop()
             
-            logging.info(f"New nodes for resNet50={new_nodes_for_resnet50},{resnet50_running_jobs}, New nodes for inceptionV3={new_nodes_for_inceptionV3},{inceptionV3_running_jobs}")
+            logging.info(f"New nodes for resNet50={new_nodes_for_resnet50 + resnet50_running_jobs}, New nodes for inceptionV3={new_nodes_for_inceptionV3 + inceptionV3_running_jobs}")
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
