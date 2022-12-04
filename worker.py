@@ -564,7 +564,7 @@ class Worker:
                     self.leaderObj.merge_files_in_global_dict(files_in_node, packet.sender)
                 
                 if H1.unique_name == self.leaderNode.unique_name:
-                    print('sending files to H2')
+                    # print('sending files to H2')
                     await self.io.send(H2.host, H2.port, Packet(self.config.node.unique_name, PacketType.ALL_LOCAL_FILES_RELAY, {"all_files": files_in_node, 'node': packet.sender, 'leader_files': self.file_service.current_files}).pack())
 
 
@@ -573,7 +573,7 @@ class Worker:
                 sender_node = packet.data['node']
                 leader_files = packet.data['leader_files']
 
-                print('received files from H1', files_in_node)
+                # print('received files from H1', files_in_node)
                 self.temporary_file_dict[sender_node] = files_in_node
                 self.temporary_file_dict[H1.unique_name] = leader_files
 
