@@ -1756,7 +1756,7 @@ class Worker:
                         self.print_c2_command(inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles)
 
                     else:
-                        self.send_c2_command_to_leader()
+                        await self.send_c2_command_to_leader()
 
                 elif cmd == "C3":
                     # set batch size
