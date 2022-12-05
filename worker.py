@@ -183,8 +183,6 @@ class Worker:
 
         self.preprocess_job_request(req_node, model, number_of_images, job_id, sdfs_images)
         if self.leaderFlag:
-            print('calling schedule from handle job request')
-
             await self.schedule_job()
 
     def preprocess_job_request(self, req_node, model, number_of_images, job_id, sdfs_images):
@@ -587,7 +585,6 @@ class Worker:
                     self.temporary_file_dict = {}
                     logging.info(f"I BECAME THE LEADER {self.leaderNode.unique_name}")
                     if H2.unique_name == self.config.node.unique_name:
-                        print('calling schedule from INTRODUCER ACK')
                         await self.schedule_job()
                 else:
                     self.leaderNode = Config.get_node_from_unique_name(introducer)
@@ -991,7 +988,6 @@ class Worker:
             
             elif packet.type == PacketType.WORKER_TASK_REQUEST_ACK:
 
-                print('i got a request ack from ', packet.sender)
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
                     jobid = packet.data['jobid']
@@ -1027,7 +1023,6 @@ class Worker:
 
                     # asyncio.create_task(self.schedule_job())
                     if self.leaderFlag:
-                        print('calling schedule from WORKER_TASK_REQUEST_ACK')
                         await self.schedule_job()
 
             elif packet.type == PacketType.SET_BATCH_SIZE:
@@ -1308,8 +1303,6 @@ class Worker:
                 self.model_dict[batch_dict_model]["queue"].insert(0, preempted_batch)
 
                 del self.workers_tasks_dict[node]
-                print('calling schedule from handle failures')
-
                 await self.schedule_job()
 
     async def replicate_files(self):
