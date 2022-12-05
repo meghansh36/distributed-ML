@@ -644,9 +644,9 @@ class Worker:
                 # self.leaderObj.merge_files_in_global_dict(files_in_node, host, port)
 
                 print(f"Got COORDINATE_ACK from {curr_node.unique_name} and my members: {list(self.membership_list.memberShipListDict.keys())}")
-                if self.globalObj.election.coordinate_ack == len(self.membership_list.memberShipListDict.keys()) - 1:
-                    logging.info(f'{self.config.node.unique_name} IS THE NEW LEADER NOW')
-                    await self.update_introducer()
+                # if self.globalObj.election.coordinate_ack == len(self.membership_list.memberShipListDict.keys()) - 1:
+                logging.info(f'{self.config.node.unique_name} IS THE NEW LEADER NOW')
+                await self.update_introducer()
             
             elif packet.type == PacketType.REPLICATE_FILE:
                 """Handle REPLICATE request from the leader"""
