@@ -65,18 +65,20 @@ class Worker:
                 'measurements' : {
                     'query_count': 0,
                     'query_rate_list' : [],
+                    'query_rate_array': []
                 }
             },
             "ResNet50": {
                 'hyperparams' : {
-                    'batch_size' : 20, 
-                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=20).execution_time_per_vm()
+                    'batch_size' : 10, 
+                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=10).execution_time_per_vm()
                     },
                 'queue': [],
                 'inprogress_queue': [],
                 'measurements' : {
                     'query_count': 0,
                     'query_rate_list' : [],
+                    'query_rate_array': []
                 }
             }
         }
@@ -176,7 +178,9 @@ class Worker:
             sdfs_images = await self.ls_all_cli("*.jpeg")
         else:
             sdfs_images = self.ls_all_temp_dict("*.jpeg")
-            print(sdfs_images)
+        
+        sdfs_images.sort()
+
         self.preprocess_job_request(req_node, model, number_of_images, job_id, sdfs_images)
         if self.leaderFlag:
             print('calling schedule from handle job request')
@@ -187,8 +191,22 @@ class Worker:
 
         logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
 
-        images = random.sample(sdfs_images, number_of_images)
+        if len(sdfs_images) == 0:
+            return
 
+        # images = random.sample(sdfs_images, number_of_images)
+        images = []
+
+        index = 0
+        while len(images) < number_of_images:
+
+            if index >= len(sdfs_images):
+                index = 0
+            
+            images.append(sdfs_images[index])
+
+            index += 1
+        
         # batch images
         batch_size = self.model_dict[model]["hyperparams"]["batch_size"]
 
@@ -463,6 +481,20 @@ class Worker:
                 logging.info(f'Assigning a new job {model} to {workernode.unique_name}')
                 await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
 
+        else:
+            return
+        
+        model = 'ResNet50'
+        model_running_list = self.get_running_nodes(model)
+        if len(model_running_list):
+            query_rate = len(model_running_list) * self.model_dict[model]["hyperparams"]["batch_size"]
+            self.model_dict[model]["measurements"]["query_rate_array"].append((time(), query_rate))
+
+        model = 'InceptionV3'
+        model_running_list = self.get_running_nodes(model)
+        if len(model_running_list):
+            query_rate = len(model_running_list) * self.model_dict[model]["hyperparams"]["batch_size"]
+            self.model_dict[model]["measurements"]["query_rate_array"].append((time(), query_rate))
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -608,12 +640,13 @@ class Worker:
                 await self.io.send(host, port, Packet(self.config.node.unique_name, PacketType.COORDINATE_ACK, response).pack())
             
             elif packet.type == PacketType.COORDINATE_ACK:
-                print('GOT COORDINATE ACK FROM ', packet.sender)
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 files_in_node = packet.data['all_files']
                 self.globalObj.election.coordinate_ack += 1
                 self.temporary_file_dict[packet.sender] = files_in_node
                 # self.leaderObj.merge_files_in_global_dict(files_in_node, host, port)
 
+                print(f"Got COORDINATE_ACK from {curr_node.unique_name} and my members: {list(self.membership_list.memberShipListDict.keys())}")
                 if self.globalObj.election.coordinate_ack == len(self.membership_list.memberShipListDict.keys()) - 1:
                     logging.info(f'{self.config.node.unique_name} IS THE NEW LEADER NOW')
                     await self.update_introducer()
@@ -1296,36 +1329,36 @@ class Worker:
 
     async def get_file_locally(self, machineids_with_filenames, sdfsfilename, localfilename, file_count=1):
         # download latest file locally
-        if self.config.node.unique_name in machineids_with_filenames:
+        # if self.config.node.unique_name in machineids_with_filenames:
+        #     if file_count == 1:
+        #         filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][-1], localfilename)
+        #         print(f"GET file {sdfsfilename} success: copied to {filepath}")
+        #     else:
+        #         files = machineids_with_filenames[self.config.node.unique_name]
+        #         filepaths = []
+        #         if file_count > len(files):
+        #             file_count = len(files)
+        #         for i in range(0, file_count):
+        #             filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][len(files) - 1 - i], f'{localfilename}_version{i}')
+        #             filepaths.append(filepath)
+        #         print(f"GET files {sdfsfilename} success: copied to {filepaths}")
+        # else:
+        # file not in local system, download files from machines
+        downloaded = False
+        for machineid, files in machineids_with_filenames.items():
+            download_node = self.config.get_node_from_unique_name(machineid)
             if file_count == 1:
-                filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][-1], localfilename)
-                print(f"GET file {sdfsfilename} success: copied to {filepath}")
+                downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[-1], destination_file=localfilename)
             else:
-                files = machineids_with_filenames[self.config.node.unique_name]
-                filepaths = []
                 if file_count > len(files):
                     file_count = len(files)
                 for i in range(0, file_count):
-                    filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][len(files) - 1 - i], f'{localfilename}_version{i}')
-                    filepaths.append(filepath)
-                print(f"GET files {sdfsfilename} success: copied to {filepaths}")
-        else:
-            # file not in local system, download files from machines
-            downloaded = False
-            for machineid, files in machineids_with_filenames.items():
-                download_node = self.config.get_node_from_unique_name(machineid)
-                if file_count == 1:
-                    downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[-1], destination_file=localfilename)
-                else:
-                    if file_count > len(files):
-                        file_count = len(files)
-                    for i in range(0, file_count):
-                        downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[len(files) - 1 - i], destination_file=f'{localfilename}_version{i}')
-                if downloaded:
-                    print(f"GET file {sdfsfilename} success: copied to {localfilename}")
-                    break
-            if not downloaded:
-                print(f"GET file {sdfsfilename} failed")
+                    downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[len(files) - 1 - i], destination_file=f'{localfilename}_version{i}')
+            if downloaded:
+                print(f"GET file {sdfsfilename} success: copied to {localfilename}")
+                break
+        if not downloaded:
+            print(f"GET file {sdfsfilename} failed")
     
     async def run_inference_on_testfiles(self, model, images):
         start_time = time()
@@ -1613,6 +1646,14 @@ class Worker:
         while True:
 
             print(f'choose one of the following options or type commands:')
+            print('MP4 commands:')
+            print(' C1: Query Rate (10sec) & Query Count [Per model]')
+            print(' C2: Query Processing Time: [Average, Percentiles, Standard Deviation]')
+            print(' C3 <InceptionV3|ResNet50> <Batch Size>')
+            print(' C4: submit-job <InceptionV3|ResNet50> <num:of images>')
+            print(' C4: get-output <jobid>')
+            print(' C5: Display current assigned jobs')
+            print('')
             print('options:')
             print(' 1. list the membership list.')
             print(' 2. list self id.')
@@ -1625,8 +1666,7 @@ class Worker:
             if self.config.testing:
                 print('9. print current bps.')
                 print('10. current false positive rate.')
-            print('MP4 commands:')
-            print(' C1: Query Rate (10sec) & Query Count [Per model]')
+            print('')
             print('commands:')
             print(' * put <localfilename> <sdfsfilename>')
             print(' * get <sdfsfilename> <localfilename>')
@@ -1636,10 +1676,6 @@ class Worker:
             print(' * ls-all <sdfsfilepattern>')
             print(' * store')
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
-            print('')
-            print('machine learning commands:')
-            print(' * predict-locally <model> <single image or list of images>')
-            print(' * get-output <jobid>')
             print('')
 
             option: Optional[str] = None
@@ -1716,36 +1752,44 @@ class Worker:
                     print(f"Qeury Count:\n  InceptionV3:{self.model_dict['InceptionV3']['measurements']['query_count']}\n   ResNet50:{self.model_dict['ResNet50']['measurements']['query_count']}")
 
                     inceptionv3_query_rate = []
-                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
-                    curr_time = 0
+                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_array']
+                    curr_time = time()
                     if len(inceptionv3_query_rate_list):
                         curr_time = inceptionv3_query_rate_list[-1][0]
                     for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
-                        timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
+                        timestamp, query_rate = inceptionv3_query_rate_list[i]
                         if curr_time - timestamp <= 10:
-                            inceptionv3_query_rate.append(image_count/execution_time)
+                            inceptionv3_query_rate.append(query_rate)
                         else:
                             break
                     
                     resnet50_query_rate = []
-                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
-                    curr_time = 0
+                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_array']
+                    curr_time = time()
                     if len(resnet50_query_rate_list):
                         curr_time = resnet50_query_rate_list[-1][0]
                     for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
-                        timestamp, execution_time, image_count = resnet50_query_rate_list[i]
+                        timestamp, query_rate = resnet50_query_rate_list[i]
                         if curr_time - timestamp <= 10:
-                            resnet50_query_rate.append(image_count/execution_time)
+                            resnet50_query_rate.append(query_rate)
                         else:
                             break
                     
+                    inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles = self.calculate_c2_command_params()
+                    
                     inceptionv3_avg_query_rate = 0
-                    if len(inceptionv3_query_rate):
-                        inceptionv3_avg_query_rate = sum(inceptionv3_query_rate)/len(inceptionv3_query_rate)
+                    if len(self.workers_tasks_dict) != 0 and len(inceptionv3_query_rate):
+                        if inceptionv3_avg != 0:
+                            inceptionv3_avg_query_rate = inceptionv3_query_rate[-1]/inceptionv3_avg
+                        else:
+                            inceptionv3_avg_query_rate = inceptionv3_query_rate[-1]/self.model_dict['InceptionV3']['hyperparams']['time']
                     
                     resnet50_avg_query_rate = 0
-                    if len(resnet50_query_rate):
-                        resnet50_avg_query_rate = sum(resnet50_query_rate)/len(resnet50_query_rate)
+                    if len(self.workers_tasks_dict) != 0 and len(resnet50_query_rate):
+                        if resnet50_avg != 0:
+                            resnet50_avg_query_rate = resnet50_query_rate[-1]/resnet50_avg
+                        else:
+                            resnet50_avg_query_rate = resnet50_query_rate[-1]/self.model_dict['ResNet50']['hyperparams']['time']
                     
                     print(f"Qeury Rate [10 sec]:\n  InceptionV3:{inceptionv3_avg_query_rate}\n   ResNet50:{resnet50_avg_query_rate}")
                 
@@ -1766,6 +1810,9 @@ class Worker:
                     batch_size = options[2]
 
                     await self.send_batch_size_command_to_leader(model, batch_size)
+                
+                elif cmd == "C5":
+                    print(json.dumps(self.workers_tasks_dict, indent=4))
 
                 elif cmd == "put": # PUT file
                     if len(options) != 3:
