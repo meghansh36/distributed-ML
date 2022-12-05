@@ -65,6 +65,7 @@ class Worker:
                 'measurements' : {
                     'query_count': 0,
                     'query_rate_list' : [],
+                    'query_rate_array': []
                 }
             },
             "ResNet50": {
@@ -77,6 +78,7 @@ class Worker:
                 'measurements' : {
                     'query_count': 0,
                     'query_rate_list' : [],
+                    'query_rate_array': []
                 }
             }
         }
@@ -463,6 +465,20 @@ class Worker:
                 logging.info(f'Assigning a new job {model} to {workernode.unique_name}')
                 await self.io.send(workernode.host, workernode.port, Packet(self.config.node.unique_name, PacketType.WORKER_TASK_REQUEST, {"jobid": single_batch_jobid, "batchid": single_batch_id, "model": model, "images": result_dict}).pack())
 
+        else:
+            return
+        
+        model = 'ResNet50'
+        model_running_list = self.get_running_nodes(model)
+        if len(model_running_list):
+            query_rate = len(model_running_list) * self.model_dict[model]["hyperparams"]["batch_size"]
+            self.model_dict[model]["measurements"]["query_rate_array"].append((time(), query_rate))
+
+        model = 'InceptionV3'
+        model_running_list = self.get_running_nodes(model)
+        if len(model_running_list):
+            query_rate = len(model_running_list) * self.model_dict[model]["hyperparams"]["batch_size"]
+            self.model_dict[model]["measurements"]["query_rate_array"].append((time(), query_rate))
 
     def display_machineids_for_file(self, sdfsfilename, machineids):
         """Function to pretty print replica info for the LS command"""
@@ -1715,26 +1731,26 @@ class Worker:
                     print(f"Qeury Count:\n  InceptionV3:{self.model_dict['InceptionV3']['measurements']['query_count']}\n   ResNet50:{self.model_dict['ResNet50']['measurements']['query_count']}")
 
                     inceptionv3_query_rate = []
-                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_list']
+                    inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_array']
                     curr_time = 0
                     if len(inceptionv3_query_rate_list):
                         curr_time = inceptionv3_query_rate_list[-1][0]
                     for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
-                        timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
+                        timestamp, query_rate = inceptionv3_query_rate_list[i]
                         if curr_time - timestamp <= 10:
-                            inceptionv3_query_rate.append(image_count)
+                            inceptionv3_query_rate.append(query_rate)
                         else:
                             break
                     
                     resnet50_query_rate = []
-                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_list']
+                    resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_array']
                     curr_time = 0
                     if len(resnet50_query_rate_list):
                         curr_time = resnet50_query_rate_list[-1][0]
                     for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
-                        timestamp, execution_time, image_count = resnet50_query_rate_list[i]
+                        timestamp, query_rate = resnet50_query_rate_list[i]
                         if curr_time - timestamp <= 10:
-                            resnet50_query_rate.append(image_count)
+                            resnet50_query_rate.append(query_rate)
                         else:
                             break
                     
