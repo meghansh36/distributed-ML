@@ -1295,36 +1295,36 @@ class Worker:
 
     async def get_file_locally(self, machineids_with_filenames, sdfsfilename, localfilename, file_count=1):
         # download latest file locally
-        if self.config.node.unique_name in machineids_with_filenames:
+        # if self.config.node.unique_name in machineids_with_filenames:
+        #     if file_count == 1:
+        #         filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][-1], localfilename)
+        #         print(f"GET file {sdfsfilename} success: copied to {filepath}")
+        #     else:
+        #         files = machineids_with_filenames[self.config.node.unique_name]
+        #         filepaths = []
+        #         if file_count > len(files):
+        #             file_count = len(files)
+        #         for i in range(0, file_count):
+        #             filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][len(files) - 1 - i], f'{localfilename}_version{i}')
+        #             filepaths.append(filepath)
+        #         print(f"GET files {sdfsfilename} success: copied to {filepaths}")
+        # else:
+        # file not in local system, download files from machines
+        downloaded = False
+        for machineid, files in machineids_with_filenames.items():
+            download_node = self.config.get_node_from_unique_name(machineid)
             if file_count == 1:
-                filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][-1], localfilename)
-                print(f"GET file {sdfsfilename} success: copied to {filepath}")
+                downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[-1], destination_file=localfilename)
             else:
-                files = machineids_with_filenames[self.config.node.unique_name]
-                filepaths = []
                 if file_count > len(files):
                     file_count = len(files)
                 for i in range(0, file_count):
-                    filepath = self.file_service.copyfile(machineids_with_filenames[self.config.node.unique_name][len(files) - 1 - i], f'{localfilename}_version{i}')
-                    filepaths.append(filepath)
-                print(f"GET files {sdfsfilename} success: copied to {filepaths}")
-        else:
-            # file not in local system, download files from machines
-            downloaded = False
-            for machineid, files in machineids_with_filenames.items():
-                download_node = self.config.get_node_from_unique_name(machineid)
-                if file_count == 1:
-                    downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[-1], destination_file=localfilename)
-                else:
-                    if file_count > len(files):
-                        file_count = len(files)
-                    for i in range(0, file_count):
-                        downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[len(files) - 1 - i], destination_file=f'{localfilename}_version{i}')
-                if downloaded:
-                    print(f"GET file {sdfsfilename} success: copied to {localfilename}")
-                    break
-            if not downloaded:
-                print(f"GET file {sdfsfilename} failed")
+                    downloaded = await self.file_service.download_file_to_dest(host=download_node.host, username=USERNAME, password=PASSWORD, file_location=files[len(files) - 1 - i], destination_file=f'{localfilename}_version{i}')
+            if downloaded:
+                print(f"GET file {sdfsfilename} success: copied to {localfilename}")
+                break
+        if not downloaded:
+            print(f"GET file {sdfsfilename} failed")
     
     async def run_inference_on_testfiles(self, model, images):
         start_time = time()
