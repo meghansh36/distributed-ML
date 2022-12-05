@@ -1000,7 +1000,7 @@ class Worker:
                 curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 if curr_node:
                     model = packet.data['model']
-                    batch_size = packet.data['batch_size']
+                    batch_size = int(packet.data['batch_size'])
                     
                     self.model_dict[model]['hyperparams']['batch_size'] = batch_size
                     self.model_dict[model]['hyperparams']['time'] = ModelParameters(download_time=1, model_load_time=5.6, first_image_predict_time=2, each_image_predict_time=0.325, batch_size=batch_size).execution_time_per_vm()
