@@ -1732,9 +1732,9 @@ class Worker:
 
                     inceptionv3_query_rate = []
                     inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_array']
-                    curr_time = 0
-                    if len(inceptionv3_query_rate_list):
-                        curr_time = inceptionv3_query_rate_list[-1][0]
+                    curr_time = time()
+                    # if len(inceptionv3_query_rate_list):
+                    #     curr_time = inceptionv3_query_rate_list[-1][0]
                     for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
                         timestamp, query_rate = inceptionv3_query_rate_list[i]
                         if curr_time - timestamp <= 10:
@@ -1744,9 +1744,9 @@ class Worker:
                     
                     resnet50_query_rate = []
                     resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_array']
-                    curr_time = 0
-                    if len(resnet50_query_rate_list):
-                        curr_time = resnet50_query_rate_list[-1][0]
+                    curr_time = time()
+                    # if len(resnet50_query_rate_list):
+                    #     curr_time = resnet50_query_rate_list[-1][0]
                     for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
                         timestamp, query_rate = resnet50_query_rate_list[i]
                         if curr_time - timestamp <= 10:
