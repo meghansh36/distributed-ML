@@ -624,12 +624,13 @@ class Worker:
                 await self.io.send(host, port, Packet(self.config.node.unique_name, PacketType.COORDINATE_ACK, response).pack())
             
             elif packet.type == PacketType.COORDINATE_ACK:
+                curr_node: Node = Config.get_node_from_unique_name(packet.sender)
                 files_in_node = packet.data['all_files']
                 self.globalObj.election.coordinate_ack += 1
                 self.temporary_file_dict[packet.sender] = files_in_node
                 # self.leaderObj.merge_files_in_global_dict(files_in_node, host, port)
 
-                print(f"Got COORDINATE_ACK from {packet.sender} and my members: {list(self.membership_list.memberShipListDict.keys())}")
+                print(f"Got COORDINATE_ACK from {curr_node.unique_name} and my members: {list(self.membership_list.memberShipListDict.keys())}")
                 if self.globalObj.election.coordinate_ack == len(self.membership_list.memberShipListDict.keys()) - 1:
                     logging.info(f'{self.config.node.unique_name} IS THE NEW LEADER NOW')
                     await self.update_introducer()
