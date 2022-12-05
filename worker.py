@@ -1756,11 +1756,11 @@ class Worker:
                     
                     inceptionv3_avg_query_rate = 0
                     if len(inceptionv3_query_rate):
-                        inceptionv3_avg_query_rate = sum(inceptionv3_query_rate)/len(inceptionv3_query_rate)
+                        inceptionv3_avg_query_rate = (sum(inceptionv3_query_rate)/len(inceptionv3_query_rate))/self.model_dict['InceptionV3']['hyperparams']['time']
                     
                     resnet50_avg_query_rate = 0
                     if len(resnet50_query_rate):
-                        resnet50_avg_query_rate = sum(resnet50_query_rate)/len(resnet50_query_rate)
+                        resnet50_avg_query_rate = (sum(resnet50_query_rate)/len(resnet50_query_rate))/self.model_dict['ResNet50']['hyperparams']['time']
                     
                     print(f"Qeury Rate [10 sec]:\n  InceptionV3:{inceptionv3_avg_query_rate}\n   ResNet50:{resnet50_avg_query_rate}")
                 
