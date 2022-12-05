@@ -608,6 +608,7 @@ class Worker:
                 await self.io.send(host, port, Packet(self.config.node.unique_name, PacketType.COORDINATE_ACK, response).pack())
             
             elif packet.type == PacketType.COORDINATE_ACK:
+                print('GOT COORDINATE ACK FROM ', packet.sender)
                 files_in_node = packet.data['all_files']
                 self.globalObj.election.coordinate_ack += 1
                 self.temporary_file_dict[packet.sender] = files_in_node
