@@ -70,8 +70,8 @@ class Worker:
             },
             "ResNet50": {
                 'hyperparams' : {
-                    'batch_size' : 20, 
-                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=20).execution_time_per_vm()
+                    'batch_size' : 5, 
+                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=5).execution_time_per_vm()
                     },
                 'queue': [],
                 'inprogress_queue': [],
