@@ -1722,7 +1722,7 @@ class Worker:
                     for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
                         timestamp, execution_time, image_count = inceptionv3_query_rate_list[i]
                         if curr_time - timestamp <= 10:
-                            inceptionv3_query_rate.append(image_count/execution_time)
+                            inceptionv3_query_rate.append(image_count)
                         else:
                             break
                     
@@ -1734,7 +1734,7 @@ class Worker:
                     for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
                         timestamp, execution_time, image_count = resnet50_query_rate_list[i]
                         if curr_time - timestamp <= 10:
-                            resnet50_query_rate.append(image_count/execution_time)
+                            resnet50_query_rate.append(image_count)
                         else:
                             break
                     
