@@ -70,8 +70,8 @@ class Worker:
             },
             "ResNet50": {
                 'hyperparams' : {
-                    'batch_size' : 5, 
-                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=5).execution_time_per_vm()
+                    'batch_size' : 10, 
+                    'time': ModelParameters(download_time=1, model_load_time=3.5, first_image_predict_time=1, each_image_predict_time=0.250, batch_size=10).execution_time_per_vm()
                     },
                 'queue': [],
                 'inprogress_queue': [],
@@ -178,7 +178,9 @@ class Worker:
             sdfs_images = await self.ls_all_cli("*.jpeg")
         else:
             sdfs_images = self.ls_all_temp_dict("*.jpeg")
-            print(sdfs_images)
+        
+        sdfs_images.sort()
+
         self.preprocess_job_request(req_node, model, number_of_images, job_id, sdfs_images)
         if self.leaderFlag:
             print('calling schedule from handle job request')
@@ -189,8 +191,22 @@ class Worker:
 
         logging.info(f"JOB#{job_id} request from {req_node.host}:{req_node.port} for {model} to run inference on {number_of_images} files")
 
-        images = random.sample(sdfs_images, number_of_images)
+        if len(sdfs_images) == 0:
+            return
 
+        # images = random.sample(sdfs_images, number_of_images)
+        images = []
+
+        index = 0
+        while len(images) < number_of_images:
+
+            if index >= len(sdfs_images):
+                index = 0
+            
+            images.append(sdfs_images[index])
+
+            index += 1
+        
         # batch images
         batch_size = self.model_dict[model]["hyperparams"]["batch_size"]
 
@@ -1630,6 +1646,14 @@ class Worker:
         while True:
 
             print(f'choose one of the following options or type commands:')
+            print('MP4 commands:')
+            print(' C1: Query Rate (10sec) & Query Count [Per model]')
+            print(' C2: Query Processing Time: [Average, Percentiles, Standard Deviation]')
+            print(' C3 <InceptionV3|ResNet50> <Batch Size>')
+            print(' C4: submit-job <InceptionV3|ResNet50> <num:of images>')
+            print(' C4: get-output <jobid>')
+            print(' C5: Display current assigned jobs')
+            print('')
             print('options:')
             print(' 1. list the membership list.')
             print(' 2. list self id.')
@@ -1642,8 +1666,7 @@ class Worker:
             if self.config.testing:
                 print('9. print current bps.')
                 print('10. current false positive rate.')
-            print('MP4 commands:')
-            print(' C1: Query Rate (10sec) & Query Count [Per model]')
+            print('')
             print('commands:')
             print(' * put <localfilename> <sdfsfilename>')
             print(' * get <sdfsfilename> <localfilename>')
@@ -1653,10 +1676,6 @@ class Worker:
             print(' * ls-all <sdfsfilepattern>')
             print(' * store')
             print(' * get-versions <sdfsfilename> <numversions> <localfilename>')
-            print('')
-            print('machine learning commands:')
-            print(' * predict-locally <model> <single image or list of images>')
-            print(' * get-output <jobid>')
             print('')
 
             option: Optional[str] = None
@@ -1735,8 +1754,8 @@ class Worker:
                     inceptionv3_query_rate = []
                     inceptionv3_query_rate_list = self.model_dict['InceptionV3']['measurements']['query_rate_array']
                     curr_time = time()
-                    # if len(inceptionv3_query_rate_list):
-                    #     curr_time = inceptionv3_query_rate_list[-1][0]
+                    if len(inceptionv3_query_rate_list):
+                        curr_time = inceptionv3_query_rate_list[-1][0]
                     for i in range(len(inceptionv3_query_rate_list) - 1, -1, -1):
                         timestamp, query_rate = inceptionv3_query_rate_list[i]
                         if curr_time - timestamp <= 10:
@@ -1747,8 +1766,8 @@ class Worker:
                     resnet50_query_rate = []
                     resnet50_query_rate_list = self.model_dict['ResNet50']['measurements']['query_rate_array']
                     curr_time = time()
-                    # if len(resnet50_query_rate_list):
-                    #     curr_time = resnet50_query_rate_list[-1][0]
+                    if len(resnet50_query_rate_list):
+                        curr_time = resnet50_query_rate_list[-1][0]
                     for i in range(len(resnet50_query_rate_list) - 1, -1, -1):
                         timestamp, query_rate = resnet50_query_rate_list[i]
                         if curr_time - timestamp <= 10:
@@ -1756,13 +1775,21 @@ class Worker:
                         else:
                             break
                     
+                    inceptionv3_avg, inceptionv3_std, inceptionv3_quantiles, resnet50_avg, resnet50_std, resnet50_quantiles = self.calculate_c2_command_params()
+                    
                     inceptionv3_avg_query_rate = 0
-                    if len(inceptionv3_query_rate):
-                        inceptionv3_avg_query_rate = (sum(inceptionv3_query_rate)/len(inceptionv3_query_rate))/self.model_dict['InceptionV3']['hyperparams']['time']
+                    if len(self.workers_tasks_dict) != 0 and len(inceptionv3_query_rate):
+                        if inceptionv3_avg != 0:
+                            inceptionv3_avg_query_rate = (sum(inceptionv3_query_rate)/len(inceptionv3_query_rate))/inceptionv3_avg
+                        else:
+                            inceptionv3_avg_query_rate = (sum(inceptionv3_query_rate)/len(inceptionv3_query_rate))/self.model_dict['InceptionV3']['hyperparams']['time']
                     
                     resnet50_avg_query_rate = 0
-                    if len(resnet50_query_rate):
-                        resnet50_avg_query_rate = (sum(resnet50_query_rate)/len(resnet50_query_rate))/self.model_dict['ResNet50']['hyperparams']['time']
+                    if len(self.workers_tasks_dict) != 0 and len(resnet50_query_rate):
+                        if resnet50_avg != 0:
+                            resnet50_avg_query_rate = (sum(resnet50_query_rate)/len(resnet50_query_rate))/resnet50_avg
+                        else:
+                            resnet50_avg_query_rate = (sum(resnet50_query_rate)/len(resnet50_query_rate))/self.model_dict['ResNet50']['hyperparams']['time']
                     
                     print(f"Qeury Rate [10 sec]:\n  InceptionV3:{inceptionv3_avg_query_rate}\n   ResNet50:{resnet50_avg_query_rate}")
                 
@@ -1783,6 +1810,9 @@ class Worker:
                     batch_size = options[2]
 
                     await self.send_batch_size_command_to_leader(model, batch_size)
+                
+                elif cmd == "C5":
+                    print(json.dumps(self.workers_tasks_dict, indent=4))
 
                 elif cmd == "put": # PUT file
                     if len(options) != 3:
