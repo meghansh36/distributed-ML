@@ -629,6 +629,7 @@ class Worker:
                 self.temporary_file_dict[packet.sender] = files_in_node
                 # self.leaderObj.merge_files_in_global_dict(files_in_node, host, port)
 
+                print("Got COORDINATE_ACK")
                 if self.globalObj.election.coordinate_ack == len(self.membership_list.memberShipListDict.keys()) - 1:
                     logging.info(f'{self.config.node.unique_name} IS THE NEW LEADER NOW')
                     await self.update_introducer()
